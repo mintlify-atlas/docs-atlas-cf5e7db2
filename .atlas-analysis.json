@@ -1,0 +1,124 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Mail IMAP MCP Server",
+  "projectDescription": "Secure Model Context Protocol server for IMAP email access with cursor-based pagination and multi-account support",
+  "theme": "aspen",
+  "primaryColor": "#2563eb",
+  "lightColor": "#60a5fa",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/accounts",
+              "configuration/environment-variables",
+              "configuration/write-operations",
+              "configuration/advanced"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/message-ids",
+              "concepts/cursor-pagination",
+              "concepts/tool-envelope"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/multi-account",
+              "guides/searching-messages",
+              "guides/error-handling"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/overview",
+              "security/best-practices"
+            ]
+          },
+          {
+            "group": "Troubleshooting",
+            "pages": [
+              "troubleshooting/common-errors",
+              "troubleshooting/connection-issues",
+              "troubleshooting/authentication"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview"
+            ]
+          },
+          {
+            "group": "Account & Mailbox Tools",
+            "pages": [
+              "api/imap-list-accounts",
+              "api/imap-verify-account",
+              "api/imap-list-mailboxes"
+            ]
+          },
+          {
+            "group": "Read Operations",
+            "pages": [
+              "api/imap-search-messages",
+              "api/imap-get-message",
+              "api/imap-get-message-raw"
+            ]
+          },
+          {
+            "group": "Write Operations",
+            "pages": [
+              "api/imap-update-message-flags",
+              "api/imap-copy-message",
+              "api/imap-move-message",
+              "api/imap-delete-message"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Secure TLS-only IMAP connections with certificate verification",
+    "10 MCP tools for comprehensive email operations",
+    "Cursor-based pagination for efficient large mailbox navigation",
+    "Multi-account support via environment variables",
+    "Write operations gated behind explicit security flag",
+    "Message parsing with HTML sanitization",
+    "PDF text extraction from attachments",
+    "Structured error handling with actionable diagnostics"
+  ],
+  "publicApiSurface": [
+    "imap_list_accounts - List configured IMAP accounts",
+    "imap_verify_account - Verify account connectivity and capabilities",
+    "imap_list_mailboxes - List visible mailboxes/folders",
+    "imap_search_messages - Search messages with cursor pagination",
+    "imap_get_message - Get parsed message details",
+    "imap_get_message_raw - Get bounded RFC822 source",
+    "imap_update_message_flags - Add or remove IMAP flags",
+    "imap_copy_message - Copy message to mailbox",
+    "imap_move_message - Move message to mailbox",
+    "imap_delete_message - Delete message from mailbox"
+  ]
+}
