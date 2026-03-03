@@ -1,0 +1,288 @@
+---
+title: API Reference
+description: Complete reference for all Mail IMAP MCP Server tools, shared types, and error codes
+---
+
+The Mail IMAP MCP Server exposes 10 tools organized into three categories: account management, message operations, and write operations.
+
+## Tool Categories
+
+### Account Management
+
+Tools for discovering and verifying IMAP accounts.
+
+<CardGroup cols={2}>
+  <Card title="imap_list_accounts" icon="list" href="/api/imap-list-accounts">
+    List configured accounts without exposing secrets
+  </Card>
+  <Card title="imap_verify_account" icon="check-circle" href="/api/imap-verify-account">
+    Verify account connectivity, auth, and capabilities
+  </Card>
+  <Card title="imap_list_mailboxes" icon="folder" href="/api/imap-list-mailboxes">
+    List visible mailboxes/folders
+  </Card>
+</CardGroup>
+
+### Message Operations
+
+Tools for searching, reading, and retrieving messages.
+
+<CardGroup cols={2}>
+  <Card title="imap_search_messages" icon="magnifying-glass" href="/api/imap-search-messages">
+    Search mailbox with filters and pagination
+  </Card>
+  <Card title="imap_get_message" icon="envelope-open" href="/api/imap-get-message">
+    Get parsed message details with optional enrichments
+  </Card>
+  <Card title="imap_get_message_raw" icon="file-code" href="/api/imap-get-message-raw">
+    Get bounded RFC822 source for diagnostics
+  </Card>
+</CardGroup>
+
+### Write Operations
+
+Tools for modifying messages and mailboxes. All write operations require `MAIL_IMAP_WRITE_ENABLED=true`.
+
+<CardGroup cols={2}>
+  <Card title="imap_update_message_flags" icon="flag" href="/api/imap-update-message-flags">
+    Add/remove IMAP flags on a message
+  </Card>
+  <Card title="imap_copy_message" icon="copy" href="/api/imap-copy-message">
+    Copy message to mailbox in same or different account
+  </Card>
+  <Card title="imap_move_message" icon="arrow-right" href="/api/imap-move-message">
+    Move message to mailbox in same account
+  </Card>
+  <Card title="imap_delete_message" icon="trash" href="/api/imap-delete-message">
+    Delete message from mailbox
+  </Card>
+</CardGroup>
+
+## Shared Input Types
+
+All tools accept these common input parameters with consistent validation rules.
+
+### account_id
+
+- **Type:** string
+- **Pattern:** `^[A-Za-z0-9_-]{1,64}$`
+- **Default:** `"default"`
+
+Identifies which configured IMAP account to use. Maps to environment variables prefixed with `MAIL_IMAP_<ACCOUNT>_`.
+
+### mailbox
+
+- **Type:** string
+- **Length:** 1..256 characters
+
+IMAP mailbox/folder name (e.g., `"INBOX"`, `"Sent"`, `"Archive/2024"`).
+
+### message_id
+
+- **Type:** string
+- **Format:** `imap:{account_id}:{mailbox}:{uidvalidity}:{uid}`
+
+Stable message identifier that survives folder moves within the same account.
+
+**Validation rules:**
+- Prefix must be `imap`
+- `uidvalidity` and `uid` must be non-negative integers
+- Parsed `account_id` must match requested account
+
+**Example:** `imap:default:INBOX:1234567890:42`
+
+### limit
+
+- **Type:** integer
+- **Range:** 1..50
+- **Default:** 10
+
+Maximum number of results to return in paginated responses.
+
+## Shared Output Envelope
+
+All tools return a consistent envelope structure with three sections:
+
+### Success Response
+
+```json
+{
+  "summary": "human-readable one-line outcome",
+  "data": {
+    // Tool-specific response data
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:00Z",
+    "duration_ms": 125
+  }
+}
+```
+
+### Error Response
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "actionable error message",
+    "details": {
+      // Optional context-specific details
+    }
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:00Z",
+    "duration_ms": 50
+  }
+}
+```
+
+### Partial Success Response
+
+Runtime IMAP command failures are returned in successful `data` payloads to preserve partial results:
+
+```json
+{
+  "summary": "Completed with issues",
+  "data": {
+    "status": "partial",
+    "issues": [
+      {
+        "code": "fetch_failed",
+        "stage": "envelope_fetch",
+        "message": "Failed to fetch envelope for UID 123",
+        "retryable": true,
+        "uid": 123
+      }
+    ],
+    "next_action": {
+      "instruction": "Retry failed UIDs individually",
+      "tool": "imap_get_message",
+      "arguments": { "message_id": "imap:default:INBOX:1234567890:123" }
+    }
+    // ... partial data
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:00Z",
+    "duration_ms": 200
+  }
+}
+```
+
+**Status values:**
+- `ok` - operation completed successfully
+- `partial` - operation completed with some failures
+- `failed` - operation failed completely
+
+## Error Codes
+
+The server returns consistent error codes in the `error.code` field:
+
+| Code | Description | When Used |
+|------|-------------|-----------|
+| `invalid_input` | Input validation failed | Malformed parameters, conflicting options, out-of-range values |
+| `auth_failed` | Authentication failed | Invalid credentials, expired password, account locked |
+| `not_found` | Resource not found | Non-existent message_id, mailbox, or account |
+| `timeout` | Operation timed out | IMAP server unresponsive, network issues |
+| `conflict` | State conflict detected | Cursor expired, UIDVALIDITY changed, mailbox deleted |
+| `internal` | Internal server error | Unexpected failures, parser errors, resource exhaustion |
+
+### Common Validation Errors
+
+<AccordionGroup>
+  <Accordion title="invalid_input: conflicting parameters">
+    ```json
+    {
+      "error": {
+        "code": "invalid_input",
+        "message": "Cannot combine cursor with search criteria",
+        "details": {
+          "provided": ["cursor", "query"]
+        }
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="invalid_input: malformed message_id">
+    ```json
+    {
+      "error": {
+        "code": "invalid_input",
+        "message": "Invalid message_id format",
+        "details": {
+          "message_id": "invalid-format",
+          "expected": "imap:{account}:{mailbox}:{uidvalidity}:{uid}"
+        }
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="conflict: cursor expired">
+    ```json
+    {
+      "error": {
+        "code": "conflict",
+        "message": "Search cursor expired or invalid",
+        "details": {
+          "cursor": "abc123...",
+          "action": "retry search without cursor"
+        }
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="not_found: message deleted">
+    ```json
+    {
+      "error": {
+        "code": "not_found",
+        "message": "Message not found (may have been deleted or moved)",
+        "details": {
+          "message_id": "imap:default:INBOX:1234567890:42"
+        }
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Write Gate
+
+Write operations (`imap_update_message_flags`, `imap_copy_message`, `imap_move_message`, `imap_delete_message`) are disabled by default and must be explicitly enabled:
+
+```bash
+export MAIL_IMAP_WRITE_ENABLED=true
+```
+
+Attempting write operations without this flag returns:
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "Write operations disabled. Set MAIL_IMAP_WRITE_ENABLED=true to enable.",
+    "details": {
+      "tool": "imap_update_message_flags"
+    }
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Account Management" icon="server" href="/api/imap-list-accounts">
+    Start with account discovery and verification
+  </Card>
+  <Card title="Search Messages" icon="magnifying-glass" href="/api/imap-search-messages">
+    Learn about search filters and pagination
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration/accounts">
+    Configure accounts via environment variables
+  </Card>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get started with your first IMAP account
+  </Card>
+</CardGroup>

@@ -1,0 +1,268 @@
+---
+title: Security Features
+description: Overview of security features and protections in the Mail IMAP MCP Server
+---
+
+The Mail IMAP MCP Server implements multiple security layers to protect credentials, prevent data exposure, and control destructive operations.
+
+## TLS Encryption
+
+All IMAP connections **require TLS encryption** by default. The server enforces strict TLS verification to prevent man-in-the-middle attacks.
+
+### Configuration
+
+TLS is enabled by default for all accounts:
+
+```bash .env
+MAIL_IMAP_<ACCOUNT>_SECURE=true  # Default: true
+MAIL_IMAP_<ACCOUNT>_PORT=993     # Standard IMAPS port
+```
+
+### TLS Behavior
+
+The server enforces the following TLS security measures (source/src/imap.rs:64-68):
+
+- **Certificate verification**: TLS certificates are validated against system root certificates
+- **Hostname verification**: Server hostname is verified during TLS handshake
+- **Connection rejection**: Connections fail if certificates cannot be validated
+- **No STARTTLS support**: Only implicit TLS (IMAPS on port 993) is supported
+
+<Warning>
+Insecure connections are rejected by default. Setting `MAIL_IMAP_<ACCOUNT>_SECURE=false` will result in an error:
+
+```
+insecure IMAP is not supported; set MAIL_IMAP_<ACCOUNT>_SECURE=true
+```
+</Warning>
+
+## Password Protection
+
+Passwords are handled with strict secrecy guarantees throughout the application lifecycle.
+
+### Secure Storage
+
+Passwords are protected using Rust's `SecretString` type (source/src/config.rs:19-33):
+
+- Stored in memory using `SecretString` to prevent accidental logging
+- Never included in debug output or logs
+- Never returned in tool responses or error messages
+- Automatically cleared from memory when dropped
+
+### Environment Variables
+
+Passwords must be provided via environment variables:
+
+```bash .env
+MAIL_IMAP_DEFAULT_PASS=your-app-password
+```
+
+The server automatically redacts secret-like environment variables in logs:
+
+- Variables matching `*_PASS`, `*_TOKEN`, `*_KEY` are redacted
+- Only non-sensitive configuration is logged at startup
+
+<Warning>
+Never commit `.env` files to version control. Add `.env` to your `.gitignore` file and use restrictive file permissions:
+
+```bash
+chmod 600 .env
+```
+</Warning>
+
+## Write Operation Protection
+
+Destructive operations are **disabled by default** and require explicit opt-in to prevent accidental data modification.
+
+### Enabling Write Operations
+
+Write operations must be explicitly enabled via environment variable:
+
+```bash .env
+MAIL_IMAP_WRITE_ENABLED=true  # Default: false
+```
+
+### Protected Tools
+
+When `MAIL_IMAP_WRITE_ENABLED=false`, the following tools return errors (source/docs/security.md:62-66):
+
+- `imap_update_message_flags` - Add/remove message flags
+- `imap_copy_message` - Copy messages between mailboxes
+- `imap_move_message` - Move messages to different mailbox
+- `imap_delete_message` - Permanently delete messages
+
+### Delete Confirmation
+
+The `imap_delete_message` tool requires **explicit confirmation** regardless of write gating (source/src/server.rs:1512-1516):
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:12345:42",
+  "confirm": true  // Must be literal boolean true
+}
+```
+
+<Warning>
+Deletion is immediate and irreversible. Messages are marked as `\Deleted` and immediately expunged from the mailbox. This operation cannot be undone.
+</Warning>
+
+## Input Validation
+
+All user inputs are validated before IMAP operations to prevent injection attacks and ensure data integrity.
+
+### String Length Bounds
+
+The server enforces strict length limits on all inputs (source/docs/security.md:124-129):
+
+- `query`, `from`, `to`, `subject`: 1-256 characters
+- `account_id`: 1-64 characters, pattern `^[A-Za-z0-9_-]+$`
+- `mailbox`: 1-256 characters
+- `limit`: 1-50 messages per page
+
+### Content Sanitization
+
+All text inputs are sanitized to prevent IMAP protocol injection (source/src/server.rs:2039-2047):
+
+- Search text fields must not contain ASCII control characters
+- Mailbox names must not contain ASCII control characters
+- IMAP flags are validated against allowed patterns
+
+### Search Result Limits
+
+Searches matching more than 20,000 messages are rejected to prevent resource exhaustion (source/src/server.rs:35):
+
+```
+Error: invalid input: search matched 25000 messages; narrow filters to at most 20000 results
+```
+
+**Resolution**: Add tighter filters using `last_days`, `from`, `subject`, or date ranges.
+
+## Output Bounding
+
+All potentially large outputs are bounded to prevent resource exhaustion and ensure predictable performance.
+
+### Message Body Text
+
+Body text is limited to prevent excessive memory usage:
+
+```json
+{
+  "body_max_chars": 2000  // Range: 100-20,000, default: 2000
+}
+```
+
+### HTML Sanitization
+
+HTML content is sanitized using the `ammonia` library (source/src/mime.rs:133):
+
+- Potentially dangerous tags are stripped
+- JavaScript is completely removed
+- CSS styles are removed
+- Only safe HTML elements are preserved
+
+### Attachment Text Extraction
+
+PDF text extraction is bounded and failure-tolerant:
+
+```json
+{
+  "extract_attachment_text": true,
+  "attachment_text_max_chars": 10000  // Range: 100-50,000, default: 10,000
+}
+```
+
+**Size limits** (source/src/mime.rs:142-145):
+- PDF extraction is limited to attachments ≤ 5MB
+- Larger attachments are skipped without failing the request
+
+### Raw Message Source
+
+RFC822 message source is bounded to prevent excessive data transfer:
+
+```json
+{
+  "max_bytes": 200000  // Range: 1,024-1,000,000, default: 200,000
+}
+```
+
+## Timeout Protection
+
+All network operations have configurable timeouts to prevent indefinite hanging and ensure server responsiveness.
+
+### Timeout Configuration
+
+Timeouts can be configured via environment variables (source/docs/security.md:150-158):
+
+```bash .env
+# TCP connection establishment
+MAIL_IMAP_CONNECT_TIMEOUT_MS=30000      # 30 seconds
+
+# IMAP server greeting
+MAIL_IMAP_GREETING_TIMEOUT_MS=15000     # 15 seconds
+
+# Socket operations (idle, read, write)
+MAIL_IMAP_SOCKET_TIMEOUT_MS=300000     # 5 minutes
+```
+
+### Timeout Behavior
+
+- **Connection timeout**: Applied to TCP socket connection (source/src/imap.rs:73-79)
+- **Greeting timeout**: Applied to TLS handshake and IMAP greeting (source/src/imap.rs:90-99)
+- **Socket timeout**: Applied to all IMAP commands and data transfers
+
+Timeout errors are returned as retriable failures, allowing clients to implement retry logic.
+
+## Logging and Auditing
+
+The server provides comprehensive logging while protecting sensitive information.
+
+### Log Redaction
+
+Sensitive data is automatically redacted from logs:
+
+- **Passwords**: Never logged (source/src/config.rs:32)
+- **Secret keys**: Variables like `*_PASS`, `*_TOKEN`, `*_KEY` are redacted
+- **Message bodies**: Not included in logs
+- **Attachments**: Not included in logs
+
+### Response Metadata
+
+All tool responses include metadata for auditing (source/docs/security.md:173-181):
+
+```json
+{
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 245
+  }
+}
+```
+
+This metadata enables:
+- Performance monitoring
+- Anomaly detection
+- Audit trail creation
+- Request correlation
+
+## Known Limitations
+
+The following security features are **not supported** in the current implementation (source/docs/security.md:209-214):
+
+<Warning>
+1. **No STARTTLS support**: Only implicit TLS (IMAPS) is supported
+2. **No certificate pinning**: Certificates are validated per standard PKI
+3. **No client authentication**: Client certificates are not supported
+4. **No encryption at rest**: Credentials are in memory only; disk encryption is the user's responsibility
+5. **No custom CA chains**: Only system root certificates are trusted
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Security Best Practices" icon="shield-check" href="/security/best-practices">
+    Learn recommended security practices for production deployments
+  </Card>
+  <Card title="Configuration Reference" icon="gear" href="/configuration/environment-variables">
+    Review all security-related configuration options
+  </Card>
+</CardGroup>

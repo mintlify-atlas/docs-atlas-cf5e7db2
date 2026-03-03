@@ -1,0 +1,172 @@
+---
+title: 'imap_list_accounts'
+description: 'List configured IMAP accounts without exposing credentials'
+---
+
+## Description
+
+Returns metadata for all configured IMAP accounts. Credentials are intentionally excluded from the response for security.
+
+<Info>
+This tool requires no input parameters and lists all accounts configured via environment variables.
+</Info>
+
+## Input Parameters
+
+This tool accepts no input parameters.
+
+## Response
+
+<ResponseField name="summary" type="string" required>
+  Human-readable summary of the operation outcome.
+  
+  Example: `"2 account(s) configured"`
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  <Expandable title="properties">
+    <ResponseField name="accounts" type="object[]" required>
+      Array of configured accounts (max 50).
+      
+      <Expandable title="account object">
+        <ResponseField name="account_id" type="string" required>
+          Account identifier matching the environment variable suffix.
+        </ResponseField>
+        
+        <ResponseField name="host" type="string" required>
+          IMAP server hostname.
+        </ResponseField>
+        
+        <ResponseField name="port" type="number" required>
+          IMAP server port (typically 993 for TLS).
+        </ResponseField>
+        
+        <ResponseField name="secure" type="boolean" required>
+          Whether TLS is enabled. Always `true` in this implementation.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="next_action" type="object" required>
+      Suggested follow-up action.
+      
+      <Expandable title="properties">
+        <ResponseField name="instruction" type="string" required>
+          Human-readable instruction for next step.
+        </ResponseField>
+        
+        <ResponseField name="tool" type="string" required>
+          Recommended tool to call next (typically `"imap_list_mailboxes"`).
+        </ResponseField>
+        
+        <ResponseField name="arguments" type="object" required>
+          Suggested arguments for the next tool call.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="meta" type="object" required>
+  Execution metadata.
+  
+  <Expandable title="properties">
+    <ResponseField name="now_utc" type="string" required>
+      Current UTC timestamp in ISO-8601 format with milliseconds.
+    </ResponseField>
+    
+    <ResponseField name="duration_ms" type="number" required>
+      Tool execution duration in milliseconds.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Examples
+
+<CodeGroup>
+
+```json Request
+{
+  "method": "tools/call",
+  "params": {
+    "name": "imap_list_accounts",
+    "arguments": {}
+  }
+}
+```
+
+```json Response - Success
+{
+  "summary": "2 account(s) configured",
+  "data": {
+    "accounts": [
+      {
+        "account_id": "default",
+        "host": "imap.gmail.com",
+        "port": 993,
+        "secure": true
+      },
+      {
+        "account_id": "work",
+        "host": "outlook.office365.com",
+        "port": 993,
+        "secure": true
+      }
+    ],
+    "next_action": {
+      "instruction": "List mailboxes to see available folders",
+      "tool": "imap_list_mailboxes",
+      "arguments": {
+        "account_id": "default"
+      }
+    }
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 2
+  }
+}
+```
+
+```json Response - No Accounts
+{
+  "summary": "0 account(s) configured",
+  "data": {
+    "accounts": [],
+    "next_action": {
+      "instruction": "Configure at least one account via environment variables",
+      "tool": "imap_verify_account",
+      "arguments": {
+        "account_id": "default"
+      }
+    }
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 1
+  }
+}
+```
+
+</CodeGroup>
+
+## Environment Variables
+
+Accounts are configured using environment variables:
+
+- `MAIL_IMAP_<ACCOUNT>_HOST` (required) - IMAP server hostname
+- `MAIL_IMAP_<ACCOUNT>_PORT` (default: 993) - IMAP server port
+- `MAIL_IMAP_<ACCOUNT>_SECURE` (default: true) - Enable TLS
+- `MAIL_IMAP_<ACCOUNT>_USER` (required) - Username/email
+- `MAIL_IMAP_<ACCOUNT>_PASS` (required) - Password/app password
+
+Where `<ACCOUNT>` is the uppercase account ID (e.g., `DEFAULT`, `WORK`).
+
+## Error Cases
+
+This tool does not fail. If no accounts are configured, it returns an empty array.
+
+## Related Tools
+
+- [imap_verify_account](/api/imap-verify-account) - Test account connectivity and authentication
+- [imap_list_mailboxes](/api/imap-list-mailboxes) - List mailboxes for a configured account

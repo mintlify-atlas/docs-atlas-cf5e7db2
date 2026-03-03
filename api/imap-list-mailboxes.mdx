@@ -1,0 +1,326 @@
+---
+title: 'imap_list_mailboxes'
+description: 'List visible mailboxes and folders for an IMAP account'
+---
+
+## Description
+
+Returns up to 200 visible mailboxes/folders for the specified account. Includes hierarchy delimiter information when supported by the server.
+
+<Info>
+Mailbox names are server-dependent and may include special characters or Unicode. Common mailboxes include `INBOX`, `Sent`, `Drafts`, `Archive`, and `Trash`.
+</Info>
+
+## Input Parameters
+
+<ParamField path="body.account_id" type="string" default="default">
+  Account identifier matching an environment variable configuration.
+  
+  Pattern: `^[A-Za-z0-9_-]{1,64}$`
+</ParamField>
+
+## Response
+
+<ResponseField name="summary" type="string" required>
+  Human-readable summary of the operation outcome.
+  
+  Example: `"5 mailbox(es)"`
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  <Expandable title="properties">
+    <ResponseField name="status" type="string" required>
+      Overall operation status: `"ok"`, `"partial"`, or `"failed"`.
+    </ResponseField>
+    
+    <ResponseField name="issues" type="object[]" required>
+      Array of diagnostic issues encountered during the operation.
+      
+      <Expandable title="issue object">
+        <ResponseField name="code" type="string" required>
+          Error code: `"invalid_input"`, `"auth_failed"`, `"not_found"`, `"timeout"`, `"conflict"`, or `"internal"`.
+        </ResponseField>
+        
+        <ResponseField name="stage" type="string" required>
+          Operation stage where issue occurred (e.g., `"connect_authenticated"`, `"list_mailboxes"`).
+        </ResponseField>
+        
+        <ResponseField name="message" type="string" required>
+          Actionable error message.
+        </ResponseField>
+        
+        <ResponseField name="retryable" type="boolean" required>
+          Whether the operation can be retried.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="next_action" type="object" required>
+      Suggested follow-up action.
+      
+      <Expandable title="properties">
+        <ResponseField name="instruction" type="string" required>
+          Human-readable instruction for next step.
+        </ResponseField>
+        
+        <ResponseField name="tool" type="string" required>
+          Recommended tool to call next (typically `"imap_search_messages"`).
+        </ResponseField>
+        
+        <ResponseField name="arguments" type="object" required>
+          Suggested arguments for the next tool call.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="account_id" type="string" required>
+      Account identifier used for the request.
+    </ResponseField>
+    
+    <ResponseField name="mailboxes" type="object[]" required>
+      Array of mailboxes (max 200).
+      
+      <Expandable title="mailbox object">
+        <ResponseField name="name" type="string" required>
+          Mailbox name. May contain hierarchy separators (e.g., `"Archive/2024"`).
+        </ResponseField>
+        
+        <ResponseField name="delimiter" type="string">
+          Hierarchy delimiter character if supported by server (e.g., `"/"`, `"."`, or `null`).
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="meta" type="object" required>
+  Execution metadata.
+  
+  <Expandable title="properties">
+    <ResponseField name="now_utc" type="string" required>
+      Current UTC timestamp in ISO-8601 format with milliseconds.
+    </ResponseField>
+    
+    <ResponseField name="duration_ms" type="number" required>
+      Tool execution duration in milliseconds.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Examples
+
+<CodeGroup>
+
+```json Request
+{
+  "method": "tools/call",
+  "params": {
+    "name": "imap_list_mailboxes",
+    "arguments": {
+      "account_id": "default"
+    }
+  }
+}
+```
+
+```json Response - Success
+{
+  "summary": "5 mailbox(es)",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "next_action": {
+      "instruction": "Search messages in INBOX",
+      "tool": "imap_search_messages",
+      "arguments": {
+        "account_id": "default",
+        "mailbox": "INBOX",
+        "limit": 10
+      }
+    },
+    "account_id": "default",
+    "mailboxes": [
+      {
+        "name": "INBOX",
+        "delimiter": "/"
+      },
+      {
+        "name": "Sent",
+        "delimiter": "/"
+      },
+      {
+        "name": "Drafts",
+        "delimiter": "/"
+      },
+      {
+        "name": "Archive",
+        "delimiter": "/"
+      },
+      {
+        "name": "Trash",
+        "delimiter": "/"
+      }
+    ]
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 156
+  }
+}
+```
+
+```json Response - With Hierarchy
+{
+  "summary": "8 mailbox(es)",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "next_action": {
+      "instruction": "Search messages in INBOX",
+      "tool": "imap_search_messages",
+      "arguments": {
+        "account_id": "default",
+        "mailbox": "INBOX",
+        "limit": 10
+      }
+    },
+    "account_id": "default",
+    "mailboxes": [
+      {
+        "name": "INBOX",
+        "delimiter": "/"
+      },
+      {
+        "name": "Archive",
+        "delimiter": "/"
+      },
+      {
+        "name": "Archive/2023",
+        "delimiter": "/"
+      },
+      {
+        "name": "Archive/2024",
+        "delimiter": "/"
+      },
+      {
+        "name": "Projects",
+        "delimiter": "/"
+      },
+      {
+        "name": "Projects/Client A",
+        "delimiter": "/"
+      },
+      {
+        "name": "Projects/Client B",
+        "delimiter": "/"
+      },
+      {
+        "name": "Trash",
+        "delimiter": "/"
+      }
+    ]
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 178
+  }
+}
+```
+
+```json Response - Connection Failed
+{
+  "summary": "0 mailbox(es)",
+  "data": {
+    "status": "failed",
+    "issues": [
+      {
+        "code": "auth_failed",
+        "stage": "connect_authenticated",
+        "message": "Authentication failed: invalid credentials",
+        "retryable": false
+      }
+    ],
+    "next_action": {
+      "instruction": "Fix credentials and retry verification",
+      "tool": "imap_verify_account",
+      "arguments": {
+        "account_id": "default"
+      }
+    },
+    "account_id": "default",
+    "mailboxes": []
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 145
+  }
+}
+```
+
+</CodeGroup>
+
+## Error Cases
+
+### Invalid Account ID
+
+<CodeGroup>
+
+```json MCP Error Response
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "account_id must match pattern ^[A-Za-z0-9_-]{1,64}$",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 1
+  }
+}
+```
+
+</CodeGroup>
+
+### Account Not Found
+
+<CodeGroup>
+
+```json MCP Error Response
+{
+  "error": {
+    "code": "not_found",
+    "message": "Account 'unknown' not found in configuration",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 2
+  }
+}
+```
+
+</CodeGroup>
+
+## Mailbox Limits
+
+The response is limited to 200 mailboxes. If your account has more mailboxes, only the first 200 will be returned. This limit is enforced to keep response sizes manageable.
+
+## Special Mailbox Names
+
+<Note>
+Mailbox names are case-sensitive and server-dependent. Common variations include:
+
+- `INBOX` (always uppercase per RFC 3501)
+- `Sent` vs `Sent Items` vs `Sent Mail`
+- `Trash` vs `Deleted Items` vs `Deleted Messages`
+- `Drafts` vs `Draft`
+- `Archive` vs `All Mail`
+
+Always use the exact name returned by this tool when referencing mailboxes in other operations.
+</Note>
+
+## Related Tools
+
+- [imap_list_accounts](/api/imap-list-accounts) - List all configured accounts
+- [imap_verify_account](/api/imap-verify-account) - Verify account connectivity before listing mailboxes
+- [imap_search_messages](/api/imap-search-messages) - Search messages in a specific mailbox

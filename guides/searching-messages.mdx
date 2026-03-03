@@ -1,0 +1,504 @@
+---
+title: "Searching Messages"
+description: "Search and filter email messages with cursor-based pagination"
+icon: "magnifying-glass"
+---
+
+## Overview
+
+The `imap_search_messages` tool provides powerful search capabilities with cursor-based pagination for efficient retrieval of messages from large mailboxes.
+
+## Basic Search
+
+<Steps>
+  <Step title="Specify account and mailbox">
+    Every search requires an `account_id` and `mailbox` name:
+
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX"
+    }
+    ```
+  </Step>
+
+  <Step title="Set result limit">
+    Control how many messages are returned per page (1-50, default 10):
+
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX",
+      "limit": 25
+    }
+    ```
+  </Step>
+
+  <Step title="Process search results">
+    The response includes message summaries and pagination info:
+
+    ```json
+    {
+      "summary": "25 message(s) returned",
+      "data": {
+        "total": 1250,
+        "returned": 25,
+        "messages": [...],
+        "next_cursor": "cursor-abc123",
+        "has_more": true
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Search Filters
+
+Combine multiple filters to narrow your search:
+
+### Text Search Filters
+
+<AccordionGroup>
+  <Accordion title="Search by query" icon="text">
+    Full-text search across message content:
+
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX",
+      "query": "quarterly report"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Filter by sender" icon="user">
+    Search messages from specific senders:
+
+    ```json
+    {
+      "account_id": "work",
+      "mailbox": "INBOX",
+      "from": "boss@company.com"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Filter by recipient" icon="at">
+    Search messages sent to specific addresses:
+
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "Sent",
+      "to": "client@example.com"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Filter by subject" icon="heading">
+    Search by subject line:
+
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX",
+      "subject": "Invoice"
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Date Filters
+
+<AccordionGroup>
+  <Accordion title="Last N days" icon="calendar-days">
+    Search messages from the last N days:
+
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX",
+      "last_days": 7
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Date range" icon="calendar-range">
+    Search messages within a specific date range:
+
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX",
+      "start_date": "2024-01-01",
+      "end_date": "2024-01-31"
+    }
+    ```
+
+    <Note>
+      Dates must be in `YYYY-MM-DD` format. `start_date` is inclusive, `end_date` is exclusive (before the date).
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+### Flag Filters
+
+<Accordion title="Unread messages only" icon="envelope">
+  Filter to show only unread messages:
+
+  ```json
+  {
+    "account_id": "default",
+    "mailbox": "INBOX",
+    "unread_only": true
+  }
+  ```
+</Accordion>
+
+## Combining Filters
+
+Filters can be combined for precise searches:
+
+<CodeGroup>
+```json Unread from specific sender
+{
+  "account_id": "work",
+  "mailbox": "INBOX",
+  "from": "notifications@github.com",
+  "unread_only": true,
+  "last_days": 3
+}
+```
+
+```json Date range with subject
+{
+  "account_id": "default",
+  "mailbox": "INBOX",
+  "subject": "Meeting",
+  "start_date": "2024-01-01",
+  "end_date": "2024-02-01"
+}
+```
+
+```json Complex multi-filter search
+{
+  "account_id": "default",
+  "mailbox": "INBOX",
+  "from": "team@company.com",
+  "subject": "Sprint",
+  "last_days": 14,
+  "unread_only": true,
+  "limit": 50
+}
+```
+</CodeGroup>
+
+## Message Snippets
+
+Include message body snippets in search results for quick preview:
+
+<Steps>
+  <Step title="Enable snippets">
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX",
+      "include_snippet": true
+    }
+    ```
+  </Step>
+
+  <Step title="Configure snippet length">
+    Set snippet character limit (50-500):
+
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX",
+      "include_snippet": true,
+      "snippet_max_chars": 200
+    }
+    ```
+
+    <Warning>
+      `snippet_max_chars` requires `include_snippet=true`
+    </Warning>
+  </Step>
+
+  <Step title="Use snippets in results">
+    Each message includes a snippet field:
+
+    ```json
+    {
+      "message_id": "imap:default:INBOX:1234:567",
+      "subject": "Quarterly Report",
+      "from": "analytics@company.com",
+      "snippet": "Please find attached the Q1 financial report showing 23% growth..."
+    }
+    ```
+  </Step>
+</Steps>
+
+## Cursor-Based Pagination
+
+For large result sets, use cursor pagination to retrieve messages in chunks:
+
+<Steps>
+  <Step title="Initial search">
+    Perform your first search without a cursor:
+
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX",
+      "last_days": 30,
+      "limit": 20
+    }
+    ```
+  </Step>
+
+  <Step title="Check pagination status">
+    The response indicates if more results are available:
+
+    ```json
+    {
+      "summary": "20 message(s) returned",
+      "data": {
+        "total": 150,
+        "returned": 20,
+        "messages": [...],
+        "next_cursor": "c_1234567890_abcdef",
+        "has_more": true
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Fetch next page">
+    Use the `next_cursor` from the previous response:
+
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX",
+      "cursor": "c_1234567890_abcdef",
+      "limit": 20
+    }
+    ```
+
+    <Tip>
+      When using a cursor, search filters from the original request are preserved. Only include `account_id`, `mailbox`, `cursor`, and optionally `limit`.
+    </Tip>
+  </Step>
+
+  <Step title="Continue until complete">
+    Repeat step 3 until `has_more` is `false`:
+
+    ```json
+    {
+      "total": 150,
+      "returned": 10,
+      "messages": [...],
+      "next_cursor": null,
+      "has_more": false
+    }
+    ```
+  </Step>
+</Steps>
+
+## Search Result Structure
+
+Each search returns consistent metadata and a list of message summaries:
+
+```json
+{
+  "summary": "25 message(s) returned",
+  "data": {
+    "status": "ok",
+    "account_id": "default",
+    "mailbox": "INBOX",
+    "total": 150,
+    "attempted": 25,
+    "returned": 25,
+    "failed": 0,
+    "messages": [
+      {
+        "message_id": "imap:default:INBOX:1234:567",
+        "message_uri": "imap://default/INBOX/1234/567",
+        "message_raw_uri": "imap://default/INBOX/1234/567/raw",
+        "mailbox": "INBOX",
+        "uidvalidity": 1234,
+        "uid": 567,
+        "date": "2024-02-26T10:30:00Z",
+        "from": "sender@example.com",
+        "subject": "Important Message",
+        "flags": ["\\Seen"],
+        "snippet": "This is the beginning of the message..."
+      }
+    ],
+    "next_cursor": "c_1234567890_abcdef",
+    "has_more": true
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 245
+  }
+}
+```
+
+### Field Descriptions
+
+- `total` - Total messages matching search criteria
+- `attempted` - Messages the server tried to fetch details for
+- `returned` - Messages successfully included in response
+- `failed` - Messages that failed to fetch (see `issues` array)
+- `next_cursor` - Opaque cursor token for next page
+- `has_more` - Boolean indicating more results available
+
+## Search Limits and Constraints
+
+<AccordionGroup>
+  <Accordion title="Maximum results per page" icon="list">
+    The `limit` parameter accepts values from **1 to 50**. Default is 10.
+
+    ```json
+    {
+      "mailbox": "INBOX",
+      "limit": 50
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Maximum total results" icon="database">
+    Searches matching more than **20,000 messages** will be rejected:
+
+    ```json
+    {
+      "error": {
+        "code": "invalid_input",
+        "message": "search matched 25000 messages; narrow filters to at most 20000 results"
+      }
+    }
+    ```
+
+    **Solution:** Add more specific filters:
+    - Reduce `last_days` value
+    - Add `from`, `to`, or `subject` filters
+    - Use date ranges instead of `last_days`
+  </Accordion>
+
+  <Accordion title="Cursor expiration" icon="clock">
+    Cursors expire after the configured TTL (default: 300 seconds).
+
+    ```json
+    {
+      "error": {
+        "code": "invalid_input",
+        "message": "cursor is invalid or expired"
+      }
+    }
+    ```
+
+    **Solution:** Restart the search without a cursor.
+  </Accordion>
+
+  <Accordion title="Mailbox changes during pagination" icon="rotate">
+    If the mailbox UIDVALIDITY changes mid-pagination, you'll receive a conflict error:
+
+    ```json
+    {
+      "error": {
+        "code": "conflict",
+        "message": "mailbox snapshot changed; rerun search"
+      }
+    }
+    ```
+
+    **Solution:** Start a new search without a cursor. The mailbox was modified (messages deleted, mailbox rebuilt, etc.).
+  </Accordion>
+</AccordionGroup>
+
+## Common Search Patterns
+
+<AccordionGroup>
+  <Accordion title="Today's unread messages" icon="inbox">
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX",
+      "unread_only": true,
+      "last_days": 1
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="All messages from a sender" icon="user">
+    ```json
+    {
+      "account_id": "work",
+      "mailbox": "INBOX",
+      "from": "manager@company.com",
+      "limit": 50
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Messages in date range with preview" icon="calendar">
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "Archive",
+      "start_date": "2024-01-01",
+      "end_date": "2024-02-01",
+      "include_snippet": true,
+      "snippet_max_chars": 150
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Search all messages (paginated)" icon="list">
+    ```json
+    {
+      "account_id": "default",
+      "mailbox": "INBOX",
+      "limit": 50
+    }
+    ```
+
+    <Note>
+      Without filters, results are returned in reverse chronological order (newest first).
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## Performance Tips
+
+<Tip>
+  **Use specific filters** - The more specific your filters, the faster the search:
+  - Prefer `last_days` over date ranges
+  - Use `from` or `subject` filters when possible
+  - Set `limit` to the minimum you need
+</Tip>
+
+<Tip>
+  **Enable snippets selectively** - Snippets require fetching message bodies, which is slower:
+  - Only enable when you need message previews
+  - Keep `snippet_max_chars` as small as practical
+</Tip>
+
+<Tip>
+  **Reuse cursors efficiently** - Cursors store search state to avoid re-querying:
+  - Complete pagination quickly before cursor expiration
+  - Don't mix different search parameters when using cursors
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/guides/error-handling">
+    Learn how to handle search errors and edge cases
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/imap-search-messages">
+    View complete search tool documentation
+  </Card>
+</CardGroup>

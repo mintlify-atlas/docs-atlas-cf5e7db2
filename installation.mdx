@@ -1,0 +1,194 @@
+---
+title: Installation
+description: Install Mail IMAP MCP Server using npm, curl, Docker, or build from source
+---
+
+Choose an installation method based on your environment and preferences. The server runs as a stdio process and communicates via the Model Context Protocol.
+
+## NPM (recommended)
+
+The easiest method—no global install required. Uses npx to run the latest version on demand.
+
+<CodeGroup>
+
+```bash npm (npx)
+npx @bradsjm/mail-imap-mcp-rs@latest
+```
+
+```bash npm (global)
+npm install -g @bradsjm/mail-imap-mcp-rs
+mail-imap-mcp-rs
+```
+
+</CodeGroup>
+
+<Info>
+  The npm package includes prebuilt binaries for Linux (x64, ARM64), macOS (x64, Apple Silicon), and Windows (x64).
+</Info>
+
+## Curl installer
+
+Install a pinned release directly from GitHub Releases. This method downloads and installs the binary for your platform.
+
+<CodeGroup>
+
+```bash curl (direct)
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/bradsjm/mail-imap-mcp-rs/releases/download/v0.1.0/mail-imap-mcp-rs-installer.sh | sh
+```
+
+```bash curl (inspect first)
+# Download installer script
+curl --proto '=https' --tlsv1.2 -LsSf -o mail-imap-mcp-rs-installer.sh \
+  https://github.com/bradsjm/mail-imap-mcp-rs/releases/download/v0.1.0/mail-imap-mcp-rs-installer.sh
+
+# Inspect the script
+cat mail-imap-mcp-rs-installer.sh
+
+# Run installer
+sh mail-imap-mcp-rs-installer.sh
+```
+
+</CodeGroup>
+
+<Note>
+  Replace `v0.1.0` with the desired version tag. See [GitHub Releases](https://github.com/bradsjm/mail-imap-mcp-rs/releases) for available versions.
+</Note>
+
+## Docker
+
+Run the server in a container using the prebuilt multi-arch image from GitHub Container Registry.
+
+<CodeGroup>
+
+```bash docker (pull and run)
+# Pull latest image
+docker pull ghcr.io/bradsjm/mail-imap-mcp-rs:latest
+
+# Run with environment file
+docker run --rm -i --env-file .env ghcr.io/bradsjm/mail-imap-mcp-rs:latest
+```
+
+```bash docker (build locally)
+# Clone repository
+git clone https://github.com/bradsjm/mail-imap-mcp-rs.git
+cd mail-imap-mcp-rs
+
+# Build image
+docker build -t mail-imap-mcp-rs .
+
+# Run with environment file
+docker run --rm -i --env-file .env mail-imap-mcp-rs
+```
+
+</CodeGroup>
+
+<Warning>
+  The Docker container requires an `.env` file with IMAP credentials. Create one from `.env.example` before running.
+</Warning>
+
+## Build from source
+
+Build from source using Rust and Cargo. Requires Rust 1.75 or later.
+
+<CodeGroup>
+
+```bash cargo (install)
+# Clone repository
+git clone https://github.com/bradsjm/mail-imap-mcp-rs.git
+cd mail-imap-mcp-rs
+
+# Install binary to ~/.cargo/bin
+cargo install --path .
+
+# Run installed binary
+mail-imap-mcp-rs
+```
+
+```bash cargo (build only)
+# Clone repository
+git clone https://github.com/bradsjm/mail-imap-mcp-rs.git
+cd mail-imap-mcp-rs
+
+# Build release binary
+cargo build --release
+
+# Binary located at target/release/mail-imap-mcp-rs
+./target/release/mail-imap-mcp-rs
+```
+
+</CodeGroup>
+
+## Verify installation
+
+After installation, verify the server is working:
+
+<Steps>
+
+<Step title="Check version">
+  Run the binary with `--version` flag:
+  
+  ```bash
+  npx @bradsjm/mail-imap-mcp-rs@latest --version
+  # or if installed globally/via cargo:
+  mail-imap-mcp-rs --version
+  ```
+</Step>
+
+<Step title="Test stdio communication">
+  The server communicates over stdin/stdout. When run without configuration, it will wait for MCP messages on stdin.
+  
+  Press `Ctrl+C` to exit if testing manually.
+</Step>
+
+<Step title="Configure environment">
+  Before using the server, you need to configure at least one IMAP account via environment variables.
+  
+  See the [Quick start guide](/quickstart) for configuration examples.
+</Step>
+
+</Steps>
+
+## Troubleshooting
+
+### Binary not found after installation
+
+If the binary isn't found after `cargo install`, ensure `~/.cargo/bin` is in your PATH:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+Add this to your shell profile (`.bashrc`, `.zshrc`, etc.) to make it permanent.
+
+### Docker permission denied
+
+If you encounter permission errors when running Docker, ensure your user is in the `docker` group:
+
+```bash
+sudo usermod -aG docker $USER
+```
+
+Log out and back in for the changes to take effect.
+
+### NPM package installation fails
+
+If npm installation fails, ensure you have Node.js 18 or later:
+
+```bash
+node --version
+```
+
+Update Node.js if needed, then retry the installation.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Configure your first IMAP account and test the connection
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/configuration/accounts">
+    Learn about account setup and environment variables
+  </Card>
+</CardGroup>

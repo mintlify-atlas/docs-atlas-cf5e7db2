@@ -1,0 +1,390 @@
+---
+title: Cursor Pagination
+description: Efficient cursor-based pagination for large email search results
+---
+
+The Mail IMAP MCP Server uses cursor-based pagination to efficiently navigate through large search result sets from `imap_search_messages`. This approach provides stable pagination even when new messages arrive or existing messages are modified.
+
+## How It Works
+
+When you perform a search, the server:
+1. Executes the IMAP search and retrieves all matching UIDs (up to 20,000)
+2. Stores the complete UID list in memory with an opaque cursor ID
+3. Returns the first page of results plus a `next_cursor` for fetching subsequent pages
+4. Automatically expires cursors after a configurable TTL (default 10 minutes)
+
+## Pagination Metadata
+
+Search responses include pagination metadata in the `data` field:
+
+```json
+{
+  "summary": "Found 150 messages",
+  "data": {
+    "account_id": "default",
+    "mailbox": "INBOX",
+    "total": 150,
+    "attempted": 10,
+    "returned": 10,
+    "failed": 0,
+    "messages": [
+      {
+        "message_id": "imap:default:INBOX:12345:42",
+        "date": "2024-02-26T10:30:00Z",
+        "from": "sender@example.com",
+        "subject": "Project update",
+        "flags": ["\\Seen"]
+      }
+      // ... up to 'limit' messages (default 10, max 50)
+    ],
+    "next_cursor": "550e8400-e29b-41d4-a716-446655440000",
+    "has_more": true
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 245
+  }
+}
+```
+
+### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total` | integer | Total number of messages matching search criteria (up to 20,000) |
+| `attempted` | integer | Number of messages the server attempted to fetch |
+| `returned` | integer | Number of messages successfully returned in this page |
+| `failed` | integer | Number of messages that failed to fetch |
+| `messages` | array | Current page of messages (max `limit`, default 10, max 50) |
+| `next_cursor` | string? | Opaque cursor string for fetching next page; absent if no more results |
+| `has_more` | boolean | `true` if additional pages are available |
+
+## Fetching Next Pages
+
+To fetch the next page, pass the `cursor` parameter instead of search criteria:
+
+```json
+{
+  "account_id": "default",
+  "mailbox": "INBOX",
+  "cursor": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+<Warning>
+**Important rules:**
+
+- `cursor` **cannot** be combined with search criteria (`query`, `from`, `to`, `subject`, `unread_only`, `last_days`, `start_date`, `end_date`)
+- Always pass the same `account_id` and `mailbox` used in the original search
+- Cursors are opaque strings; do not attempt to parse or construct them
+</Warning>
+
+## Complete Pagination Example
+
+```javascript
+// Initial search
+const firstPage = await callTool("imap_search_messages", {
+  account_id: "default",
+  mailbox: "INBOX",
+  unread_only: true,
+  limit: 50
+});
+
+console.log(`Found ${firstPage.data.total} total messages`);
+let messages = firstPage.data.messages;
+
+// Fetch remaining pages
+let cursor = firstPage.data.next_cursor;
+while (cursor && firstPage.data.has_more) {
+  const nextPage = await callTool("imap_search_messages", {
+    account_id: "default",
+    mailbox: "INBOX",
+    cursor: cursor
+  });
+  
+  messages = messages.concat(nextPage.data.messages);
+  cursor = nextPage.data.next_cursor;
+}
+
+console.log(`Retrieved ${messages.length} messages`);
+```
+
+## Cursor Storage
+
+The server maintains an in-memory cursor store with automatic cleanup and eviction. The implementation is in `src/pagination.rs`:
+
+```rust
+pub struct CursorEntry {
+    /// Account identifier
+    pub account_id: String,
+    /// Mailbox name
+    pub mailbox: String,
+    /// Mailbox UIDVALIDITY at time of search
+    pub uidvalidity: u32,
+    /// All matching UIDs in descending order (newest first)
+    pub uids_desc: Vec<u32>,
+    /// Current offset into uids_desc (next page starts here)
+    pub offset: usize,
+    /// Whether snippet was included in original search
+    pub include_snippet: bool,
+    /// Snippet character limit from original search
+    pub snippet_max_chars: usize,
+    /// Expiration timestamp (refreshed on read/write access)
+    pub expires_at: Instant,
+}
+```
+
+<Info>
+Cursors store the complete list of matching UIDs (`uids_desc`) in descending order (newest first). Each page fetch advances the `offset` without re-executing the IMAP search.
+</Info>
+
+## Cursor Expiration
+
+Cursors expire after a configurable TTL to prevent memory leaks. The default is 10 minutes (600 seconds).
+
+### Configuration
+
+```bash
+MAIL_IMAP_CURSOR_TTL_SECONDS=600
+```
+
+### Expiration Behavior
+
+- Cursors are created with an expiration timestamp
+- Each access (read or update) **refreshes** the expiration
+- Expired cursors are automatically cleaned up before get/create operations
+- The cleanup process runs on every cursor store access
+
+From `src/pagination.rs:113`:
+
+```rust
+fn cleanup(&mut self) {
+    let now = Instant::now();
+    self.entries.retain(|_, entry| entry.expires_at > now);
+}
+```
+
+### Expiration Error
+
+When a cursor expires, you'll receive:
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "cursor is invalid or expired"
+  }
+}
+```
+
+**Solution:** Rerun the original search without a cursor to obtain a fresh result set.
+
+## Cursor Storage Limits
+
+The server stores cursor data in-memory with configurable limits to prevent unbounded memory growth.
+
+### Configuration
+
+```bash
+# Maximum number of cursor entries to store
+MAIL_IMAP_CURSOR_MAX_ENTRIES=512
+```
+
+### LRU Eviction
+
+When the limit is reached, the server evicts the oldest cursors using an LRU-like policy:
+
+1. **Overflow calculation** - Determine how many cursors exceed the limit
+2. **Sort by expiration** - Order cursors by their expiration timestamp
+3. **Evict oldest** - Remove the oldest cursors until under the limit
+
+From `src/pagination.rs:122`:
+
+```rust
+fn evict_if_needed(&mut self) {
+    if self.entries.len() <= self.max_entries {
+        return;
+    }
+
+    let overflow = self.entries.len() - self.max_entries;
+    let mut ids_by_expiry: Vec<(String, Instant)> = self
+        .entries
+        .iter()
+        .map(|(id, entry)| (id.clone(), entry.expires_at))
+        .collect();
+    ids_by_expiry.sort_by_key(|(_, expires_at)| *expires_at);
+
+    for (id, _) in ids_by_expiry.into_iter().take(overflow) {
+        self.entries.remove(&id);
+    }
+}
+```
+
+<Note>
+Since accessing a cursor refreshes its expiration, frequently accessed cursors naturally stay in memory longer. This creates LRU-like behavior where active pagination sessions are preserved.
+</Note>
+
+## Error Handling
+
+### Invalid or Expired Cursor
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "cursor is invalid or expired"
+  }
+}
+```
+
+**Causes:**
+- Cursor expired after TTL
+- Cursor was malformed
+- Cursor was evicted due to storage limits
+
+**Resolution:** Rerun the original search from scratch.
+
+### Cursor Combined with Search Criteria
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "cursor cannot be combined with search criteria"
+  }
+}
+```
+
+**Cause:** Both `cursor` and search fields (like `query`, `from`, etc.) were provided.
+
+**Resolution:** Use only `cursor` for pagination, not search criteria.
+
+### UIDVALIDITY Changed
+
+```json
+{
+  "error": {
+    "code": "conflict",
+    "message": "mailbox snapshot changed; rerun search"
+  }
+}
+```
+
+**Cause:** The mailbox's `UIDVALIDITY` changed between pages (mailbox was recreated or migrated).
+
+**Resolution:** Rerun the original search to get a fresh cursor with the new UIDVALIDITY.
+
+## Search Result Limits
+
+The server enforces a hard limit of 20,000 messages per search to prevent excessive memory usage:
+
+```rust
+// From src/server.rs:35
+const MAX_CURSOR_UIDS_STORED: usize = 20_000;
+```
+
+If a search matches more than 20,000 messages, you'll receive an error:
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "search matched more than 20,000 messages; narrow filters and retry"
+  }
+}
+```
+
+**Resolution:** Add more specific search criteria:
+- Use `last_days` or date ranges (`start_date`, `end_date`)
+- Filter by sender (`from`) or recipient (`to`)
+- Search for specific terms (`query`, `subject`)
+- Enable `unread_only` if applicable
+
+## Best Practices
+
+### 1. Process Pages Promptly
+
+Cursors expire after 10 minutes by default. Complete pagination workflows quickly or handle expiration errors gracefully.
+
+```javascript
+// Good: Fetch all pages in a tight loop
+while (cursor) {
+  const page = await fetchNextPage(cursor);
+  processMessages(page.messages);
+  cursor = page.next_cursor;
+}
+```
+
+### 2. Don't Reuse Cursors
+
+Each cursor represents a specific page. Always use the `next_cursor` from the previous response.
+
+```javascript
+// Bad: Reusing the same cursor
+const cursor = firstPage.data.next_cursor;
+await fetchPage(cursor); // OK
+await fetchPage(cursor); // Wrong! Returns same page
+
+// Good: Use next_cursor from each response
+let cursor = firstPage.data.next_cursor;
+const page2 = await fetchPage(cursor);
+cursor = page2.data.next_cursor; // Update cursor
+const page3 = await fetchPage(cursor); // Correct!
+```
+
+### 3. Check `has_more` Flag
+
+Don't rely solely on `next_cursor` being present. Check the `has_more` field:
+
+```javascript
+while (response.data.has_more && response.data.next_cursor) {
+  response = await fetchNextPage(response.data.next_cursor);
+}
+```
+
+### 4. Handle Errors Gracefully
+
+Cursor-related errors should trigger a fresh search:
+
+```javascript
+try {
+  const page = await fetchPage(cursor);
+} catch (error) {
+  if (error.code === 'invalid_input' || error.code === 'conflict') {
+    // Cursor expired or UIDVALIDITY changed - restart search
+    const freshSearch = await searchMessages(originalCriteria);
+    return processPagination(freshSearch);
+  }
+  throw error;
+}
+```
+
+### 5. Parallel Processing
+
+Different searches generate independent cursors that can be processed in parallel:
+
+```javascript
+// OK: Process multiple mailboxes in parallel
+const [inbox, sent] = await Promise.all([
+  paginateMailbox('INBOX'),
+  paginateMailbox('Sent')
+]);
+```
+
+### 6. Adjust Limits Appropriately
+
+Use larger page sizes (up to 50) for batch processing, smaller sizes for interactive use:
+
+```javascript
+// Batch processing: maximize throughput
+const results = await searchMessages({
+  mailbox: 'INBOX',
+  limit: 50  // Maximum
+});
+
+// Interactive UI: faster initial response
+const results = await searchMessages({
+  mailbox: 'INBOX',
+  limit: 10  // Default, faster first page
+});
+```

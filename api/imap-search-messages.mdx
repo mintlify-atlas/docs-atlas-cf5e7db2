@@ -1,0 +1,450 @@
+---
+title: "imap_search_messages"
+description: "Search messages in a mailbox with cursor-based pagination"
+---
+
+## Overview
+
+Search for messages in a specified mailbox with support for multiple filter criteria and efficient cursor-based pagination. Returns lightweight message summaries with optional body snippets.
+
+## Input Parameters
+
+<ParamField path="account_id" type="string" default="default">
+  Account identifier. Must match pattern `^[A-Za-z0-9_-]{1,64}$`.
+</ParamField>
+
+<ParamField path="mailbox" type="string" required>
+  Mailbox name to search (e.g., `INBOX`, `Sent`, `Archive`). Length must be 1-256 characters. Must not contain ASCII control characters.
+</ParamField>
+
+<ParamField path="cursor" type="string">
+  Opaque pagination cursor from a previous search response. **Cannot be combined with any search criteria fields.** When provided, resumes pagination from the saved search state.
+</ParamField>
+
+### Search Criteria
+
+<Note>
+  All search criteria fields are mutually exclusive with the `cursor` parameter. Use either a cursor OR search criteria, not both.
+</Note>
+
+<ParamField path="query" type="string">
+  Full-text search query matching message body and headers. Length: 1-256 characters. Must not contain ASCII control characters.
+</ParamField>
+
+<ParamField path="from" type="string">
+  Filter by From header. Length: 1-256 characters. Must not contain ASCII control characters.
+</ParamField>
+
+<ParamField path="to" type="string">
+  Filter by To header. Length: 1-256 characters. Must not contain ASCII control characters.
+</ParamField>
+
+<ParamField path="subject" type="string">
+  Filter by Subject header. Length: 1-256 characters. Must not contain ASCII control characters.
+</ParamField>
+
+<ParamField path="unread_only" type="boolean">
+  When `true`, returns only unread messages (IMAP `UNSEEN` flag).
+</ParamField>
+
+### Date Filters
+
+<Warning>
+  The `last_days` parameter cannot be combined with `start_date` or `end_date`. Use either relative date filtering OR absolute date range, not both.
+</Warning>
+
+<ParamField path="last_days" type="integer">
+  Filter to messages from the last N days. Range: 1-365. Cannot be combined with `start_date` or `end_date`.
+</ParamField>
+
+<ParamField path="start_date" type="string">
+  Filter to messages on or after this date. Format: `YYYY-MM-DD`. Must be less than or equal to `end_date` if both are provided.
+</ParamField>
+
+<ParamField path="end_date" type="string">
+  Filter to messages before this date (exclusive). Format: `YYYY-MM-DD`. Must be greater than or equal to `start_date` if both are provided.
+</ParamField>
+
+### Pagination and Display
+
+<ParamField path="limit" type="integer" default="10">
+  Maximum messages to return per page. Range: 1-50.
+</ParamField>
+
+<ParamField path="include_snippet" type="boolean" default="false">
+  When `true`, includes a truncated subject preview in each message summary.
+</ParamField>
+
+<ParamField path="snippet_max_chars" type="integer" default="200">
+  Maximum snippet length. Range: 50-500. **Only valid when `include_snippet=true`**.
+</ParamField>
+
+## Output Data
+
+<ResponseField name="status" type="string" required>
+  Operation status: `ok` (success), `partial` (some messages failed), or `failed` (operation failed).
+</ResponseField>
+
+<ResponseField name="issues" type="array" required>
+  Array of diagnostic issues encountered during the operation.
+  
+  <Expandable title="Issue Object">
+    <ResponseField name="code" type="string">
+      Error code: `invalid_input`, `auth_failed`, `not_found`, `timeout`, `conflict`, or `internal`.
+    </ResponseField>
+    
+    <ResponseField name="stage" type="string">
+      Operation stage where issue occurred (e.g., `connect_authenticated`, `uid_search`, `fetch_headers_and_flags`).
+    </ResponseField>
+    
+    <ResponseField name="message" type="string">
+      Human-readable error message.
+    </ResponseField>
+    
+    <ResponseField name="retryable" type="boolean">
+      Whether the operation can be retried.
+    </ResponseField>
+    
+    <ResponseField name="uid" type="integer">
+      Message UID if issue relates to a specific message.
+    </ResponseField>
+    
+    <ResponseField name="message_id" type="string">
+      Stable message identifier if issue relates to a specific message.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="next_action" type="object" required>
+  Suggested next operation to perform.
+  
+  <Expandable title="Next Action Object">
+    <ResponseField name="instruction" type="string">
+      Human-readable instruction.
+    </ResponseField>
+    
+    <ResponseField name="tool" type="string">
+      Recommended tool name to call next.
+    </ResponseField>
+    
+    <ResponseField name="arguments" type="object">
+      Suggested arguments for the next tool call.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="account_id" type="string" required>
+  Account identifier used for this search.
+</ResponseField>
+
+<ResponseField name="mailbox" type="string" required>
+  Mailbox name that was searched.
+</ResponseField>
+
+<ResponseField name="total" type="integer" required>
+  Total number of messages matching the search criteria.
+</ResponseField>
+
+<ResponseField name="attempted" type="integer" required>
+  Number of messages for which metadata fetch was attempted.
+</ResponseField>
+
+<ResponseField name="returned" type="integer" required>
+  Number of messages successfully returned in this page.
+</ResponseField>
+
+<ResponseField name="failed" type="integer" required>
+  Number of messages that failed to fetch metadata.
+</ResponseField>
+
+<ResponseField name="messages" type="array" required>
+  Array of message summaries (up to `limit` messages).
+  
+  <Expandable title="Message Summary Object">
+    <ResponseField name="message_id" type="string">
+      Stable message identifier with format: `imap:{account_id}:{mailbox}:{uidvalidity}:{uid}`.
+    </ResponseField>
+    
+    <ResponseField name="message_uri" type="string">
+      URI reference to the message resource (e.g., `imap://default/mailbox/INBOX/message/123456/789`).
+    </ResponseField>
+    
+    <ResponseField name="message_raw_uri" type="string">
+      URI reference to the raw RFC822 message source.
+    </ResponseField>
+    
+    <ResponseField name="mailbox" type="string">
+      Mailbox name containing this message.
+    </ResponseField>
+    
+    <ResponseField name="uidvalidity" type="integer">
+      Mailbox UIDVALIDITY value at time of search. Used to detect mailbox changes.
+    </ResponseField>
+    
+    <ResponseField name="uid" type="integer">
+      Message UID within the mailbox.
+    </ResponseField>
+    
+    <ResponseField name="date" type="string">
+      Parsed Date header value.
+    </ResponseField>
+    
+    <ResponseField name="from" type="string">
+      Parsed From header value.
+    </ResponseField>
+    
+    <ResponseField name="subject" type="string">
+      Parsed Subject header value.
+    </ResponseField>
+    
+    <ResponseField name="flags" type="array">
+      IMAP flags array (e.g., `["\\Seen", "\\Flagged"]`).
+    </ResponseField>
+    
+    <ResponseField name="snippet" type="string">
+      Truncated subject preview (only present when `include_snippet=true`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="next_cursor" type="string">
+  Opaque cursor for retrieving the next page. Present only when `has_more=true`. Pass this value as the `cursor` parameter to retrieve the next page.
+</ResponseField>
+
+<ResponseField name="has_more" type="boolean" required>
+  Whether additional pages are available. When `true`, use `next_cursor` to fetch the next page.
+</ResponseField>
+
+## Search Limits
+
+<Warning>
+  Searches matching more than 20,000 messages are rejected with an `invalid_input` error. If this occurs, narrow your search filters and retry.
+</Warning>
+
+The server enforces a maximum of 20,000 messages per search to prevent performance issues and excessive memory usage. If your search returns this error, refine your criteria using:
+- Date range filters (`start_date`, `end_date`, or `last_days`)
+- More specific text filters (`query`, `from`, `to`, `subject`)
+- Smaller mailboxes or mailbox subfolders
+
+## Cursor Pagination
+
+Cursor-based pagination provides efficient navigation through large result sets:
+
+1. **Initial Search**: Call `imap_search_messages` with search criteria and `limit`
+2. **Check `has_more`**: If `true`, the response includes a `next_cursor`
+3. **Next Page**: Call `imap_search_messages` with the `cursor` value (omit all search criteria)
+4. **Repeat**: Continue using the new `next_cursor` until `has_more=false`
+
+### Cursor Behavior
+
+- Cursors expire after a configured TTL (typically 5-15 minutes)
+- Cursor store has a maximum entry limit (oldest cursors evicted first)
+- Cursors are invalidated if mailbox UIDVALIDITY changes (returns `conflict` error)
+- Each cursor captures the search criteria and current page offset
+
+## Example: Search Recent Unread Messages
+
+```json
+{
+  "account_id": "default",
+  "mailbox": "INBOX",
+  "unread_only": true,
+  "last_days": 7,
+  "limit": 20,
+  "include_snippet": true,
+  "snippet_max_chars": 150
+}
+```
+
+**Response:**
+
+```json
+{
+  "summary": "15 message(s) returned",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "next_action": {
+      "instruction": "Open a message to inspect full content and headers.",
+      "tool": "imap_get_message",
+      "arguments": {
+        "account_id": "default",
+        "message_id": "imap:default:INBOX:123456:789"
+      }
+    },
+    "account_id": "default",
+    "mailbox": "INBOX",
+    "total": 15,
+    "attempted": 15,
+    "returned": 15,
+    "failed": 0,
+    "messages": [
+      {
+        "message_id": "imap:default:INBOX:123456:789",
+        "message_uri": "imap://default/mailbox/INBOX/message/123456/789",
+        "message_raw_uri": "imap://default/mailbox/INBOX/message/123456/789/raw",
+        "mailbox": "INBOX",
+        "uidvalidity": 123456,
+        "uid": 789,
+        "date": "Mon, 3 Mar 2026 10:30:00 +0000",
+        "from": "Alice <alice@example.com>",
+        "subject": "Project Update: Q1 Planning",
+        "flags": [],
+        "snippet": "Project Update: Q1 Planning"
+      }
+    ],
+    "next_cursor": null,
+    "has_more": false
+  },
+  "meta": {
+    "now_utc": "2026-03-03T10:35:22.145Z",
+    "duration_ms": 342
+  }
+}
+```
+
+## Example: Paginate with Cursor
+
+**Initial Request:**
+
+```json
+{
+  "account_id": "default",
+  "mailbox": "INBOX",
+  "limit": 10
+}
+```
+
+**Initial Response (truncated):**
+
+```json
+{
+  "data": {
+    "returned": 10,
+    "total": 450,
+    "has_more": true,
+    "next_cursor": "crs_a1b2c3d4e5f6",
+    "messages": [ /* ... */ ]
+  }
+}
+```
+
+**Next Page Request:**
+
+```json
+{
+  "account_id": "default",
+  "mailbox": "INBOX",
+  "cursor": "crs_a1b2c3d4e5f6",
+  "limit": 10
+}
+```
+
+## Example: Search by Sender and Date Range
+
+```json
+{
+  "account_id": "work",
+  "mailbox": "Archive/2025",
+  "from": "notifications@github.com",
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "limit": 50
+}
+```
+
+**Response:**
+
+```json
+{
+  "summary": "48 message(s) returned",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "account_id": "work",
+    "mailbox": "Archive/2025",
+    "total": 48,
+    "attempted": 48,
+    "returned": 48,
+    "failed": 0,
+    "messages": [
+      {
+        "message_id": "imap:work:Archive/2025:987654:321",
+        "from": "notifications@github.com",
+        "subject": "[repo/name] Pull request #123 opened",
+        "date": "Thu, 15 Jan 2025 14:22:00 +0000",
+        "flags": ["\\Seen"]
+      }
+    ],
+    "next_cursor": null,
+    "has_more": false
+  },
+  "meta": {
+    "now_utc": "2026-03-03T10:40:15.890Z",
+    "duration_ms": 1205
+  }
+}
+```
+
+## Validation Errors
+
+### Cursor with Search Criteria
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "cursor cannot be combined with search criteria"
+  }
+}
+```
+
+### Date Range Conflict
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "last_days cannot be combined with start_date/end_date"
+  }
+}
+```
+
+### Too Many Results
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "search matched 25000 messages; narrow filters to at most 20000 results"
+  }
+}
+```
+
+### Expired Cursor
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "cursor is invalid or expired"
+  }
+}
+```
+
+### UIDVALIDITY Mismatch
+
+```json
+{
+  "error": {
+    "code": "conflict",
+    "message": "mailbox snapshot changed; rerun search"
+  }
+}
+```
+
+## Related Tools
+
+- [imap_get_message](/api/imap-get-message) - Retrieve full message details
+- [imap_list_mailboxes](/api/imap-list-mailboxes) - List available mailboxes
+- [imap_get_message_raw](/api/imap-get-message-raw) - Get raw RFC822 source

@@ -1,0 +1,296 @@
+---
+title: "Multi-Account Setup"
+description: "Configure multiple IMAP accounts and manage email across different servers"
+icon: "users"
+---
+
+## Overview
+
+The Mail IMAP MCP Server supports multiple IMAP accounts simultaneously. You can configure accounts for Gmail, Outlook, Fastmail, or any IMAP-compatible email service and switch between them seamlessly.
+
+## Configuration Format
+
+Accounts are configured using environment variables with the pattern `MAIL_IMAP_{ACCOUNT_ID}_{SETTING}`.
+
+### Required Settings
+
+Each account requires three essential settings:
+
+- `MAIL_IMAP_{ACCOUNT_ID}_HOST` - IMAP server hostname
+- `MAIL_IMAP_{ACCOUNT_ID}_USER` - Email username
+- `MAIL_IMAP_{ACCOUNT_ID}_PASS` - App-specific password
+
+### Optional Settings
+
+- `MAIL_IMAP_{ACCOUNT_ID}_PORT` - IMAP port (defaults to 993)
+- `MAIL_IMAP_{ACCOUNT_ID}_SECURE` - Use TLS (defaults to true)
+
+<Warning>
+  The server **only supports secure TLS connections**. Setting `SECURE=false` will cause connection failures.
+</Warning>
+
+## Setting Up Multiple Accounts
+
+<Steps>
+  <Step title="Define your default account">
+    The default account is used when no `account_id` is specified in tool calls.
+
+    ```bash
+    MAIL_IMAP_DEFAULT_HOST=imap.gmail.com
+    MAIL_IMAP_DEFAULT_USER=user@gmail.com
+    MAIL_IMAP_DEFAULT_PASS=app-password-here
+    ```
+
+    <Tip>
+      Use app-specific passwords, not your main account password. See your email provider's documentation for generating app passwords.
+    </Tip>
+  </Step>
+
+  <Step title="Add your work account">
+    Create a second account with the identifier `WORK`:
+
+    ```bash
+    MAIL_IMAP_WORK_HOST=outlook.office365.com
+    MAIL_IMAP_WORK_USER=user@company.com
+    MAIL_IMAP_WORK_PASS=work-app-password
+    ```
+  </Step>
+
+  <Step title="Add your personal account">
+    Add a third account with the identifier `PERSONAL`:
+
+    ```bash
+    MAIL_IMAP_PERSONAL_HOST=imap.fastmail.com
+    MAIL_IMAP_PERSONAL_USER=user@fastmail.com
+    MAIL_IMAP_PERSONAL_PASS=personal-app-password
+    ```
+  </Step>
+
+  <Step title="Configure in MCP settings">
+    Add all environment variables to your MCP client configuration:
+
+    ```json
+    {
+      "mcpServers": {
+        "mail-imap": {
+          "command": "npx",
+          "args": ["-y", "@bradsjm/mail-imap-mcp-rs@latest"],
+          "env": {
+            "MAIL_IMAP_DEFAULT_HOST": "imap.gmail.com",
+            "MAIL_IMAP_DEFAULT_USER": "user@gmail.com",
+            "MAIL_IMAP_DEFAULT_PASS": "app-password-here",
+            "MAIL_IMAP_WORK_HOST": "outlook.office365.com",
+            "MAIL_IMAP_WORK_USER": "user@company.com",
+            "MAIL_IMAP_WORK_PASS": "work-app-password",
+            "MAIL_IMAP_PERSONAL_HOST": "imap.fastmail.com",
+            "MAIL_IMAP_PERSONAL_USER": "user@fastmail.com",
+            "MAIL_IMAP_PERSONAL_PASS": "personal-app-password"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Using Multiple Accounts
+
+### List All Configured Accounts
+
+Use the `imap_list_accounts` tool to see all available accounts without exposing credentials:
+
+```json
+{
+  "summary": "3 account(s) configured",
+  "data": {
+    "accounts": [
+      {
+        "account_id": "default",
+        "host": "imap.gmail.com",
+        "port": 993,
+        "secure": true
+      },
+      {
+        "account_id": "work",
+        "host": "outlook.office365.com",
+        "port": 993,
+        "secure": true
+      },
+      {
+        "account_id": "personal",
+        "host": "imap.fastmail.com",
+        "port": 993,
+        "secure": true
+      }
+    ]
+  }
+}
+```
+
+### Specify Account in Tool Calls
+
+All tools accept an optional `account_id` parameter. When omitted, the `default` account is used.
+
+<Accordion title="Search work email">
+  ```json
+  {
+    "account_id": "work",
+    "mailbox": "INBOX",
+    "from": "boss@company.com",
+    "last_days": 7
+  }
+  ```
+</Accordion>
+
+<Accordion title="List personal mailboxes">
+  ```json
+  {
+    "account_id": "personal"
+  }
+  ```
+</Accordion>
+
+<Accordion title="Get message from default account">
+  The `account_id` can be omitted to use the default account:
+
+  ```json
+  {
+    "message_id": "imap:default:INBOX:1234:567"
+  }
+  ```
+</Accordion>
+
+## Cross-Account Operations
+
+### Copy Messages Between Accounts
+
+You can copy messages from one account to another using the `imap_copy_message` tool:
+
+```json
+{
+  "account_id": "work",
+  "message_id": "imap:work:INBOX:1234:567",
+  "destination_mailbox": "Archive",
+  "destination_account_id": "personal"
+}
+```
+
+When copying across accounts, the server:
+1. Fetches the raw RFC822 message from the source account
+2. Connects to the destination account
+3. Uses IMAP `APPEND` to create the message in the destination mailbox
+
+<Warning>
+  Write operations require `MAIL_IMAP_WRITE_ENABLED=true` to be set.
+</Warning>
+
+## Common Provider Settings
+
+<AccordionGroup>
+  <Accordion title="Gmail" icon="google">
+    **Host:** `imap.gmail.com`  
+    **Port:** `993`  
+    **App Password:** [Generate here](https://myaccount.google.com/apppasswords)
+
+    ```bash
+    MAIL_IMAP_GMAIL_HOST=imap.gmail.com
+    MAIL_IMAP_GMAIL_USER=your-email@gmail.com
+    MAIL_IMAP_GMAIL_PASS=your-app-password
+    ```
+  </Accordion>
+
+  <Accordion title="Outlook/Office 365" icon="microsoft">
+    **Host:** `outlook.office365.com`  
+    **Port:** `993`  
+    **Setup:** [Enable IMAP](https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-8361e398-8af4-4e97-b147-6c6c4ac95353)
+
+    ```bash
+    MAIL_IMAP_OUTLOOK_HOST=outlook.office365.com
+    MAIL_IMAP_OUTLOOK_USER=your-email@outlook.com
+    MAIL_IMAP_OUTLOOK_PASS=your-password
+    ```
+  </Accordion>
+
+  <Accordion title="Fastmail" icon="envelope">
+    **Host:** `imap.fastmail.com`  
+    **Port:** `993`  
+    **App Password:** [Generate here](https://www.fastmail.com/settings/security/devicekeys)
+
+    ```bash
+    MAIL_IMAP_FASTMAIL_HOST=imap.fastmail.com
+    MAIL_IMAP_FASTMAIL_USER=your-email@fastmail.com
+    MAIL_IMAP_FASTMAIL_PASS=your-app-password
+    ```
+  </Accordion>
+
+  <Accordion title="iCloud Mail" icon="apple">
+    **Host:** `imap.mail.me.com`  
+    **Port:** `993`  
+    **App Password:** [Generate here](https://support.apple.com/en-us/HT204397)
+
+    ```bash
+    MAIL_IMAP_ICLOUD_HOST=imap.mail.me.com
+    MAIL_IMAP_ICLOUD_USER=your-email@icloud.com
+    MAIL_IMAP_ICLOUD_PASS=your-app-password
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Security Considerations
+
+### Password Storage
+
+Passwords configured via environment variables:
+- Are **never logged** by the server
+- Are **never returned** in tool responses
+- Should use **app-specific passwords**, not your main account password
+
+### Account Isolation
+
+Each account maintains:
+- Independent IMAP sessions
+- Separate authentication
+- Isolated connection pools
+
+Accounts cannot interfere with each other's operations.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Account not found error">
+    **Error:** `not found: account 'xyz' not configured`
+
+    **Solution:** Ensure environment variables use the exact account ID:
+    - Check spelling and capitalization
+    - Verify all three required variables are set (`HOST`, `USER`, `PASS`)
+  </Accordion>
+
+  <Accordion title="Authentication failed">
+    **Error:** `authentication failed: [AUTHENTICATIONFAILED]`
+
+    **Solution:**
+    - Use app-specific password, not your account password
+    - Verify IMAP access is enabled for the account
+    - Check username format (some providers require full email)
+  </Accordion>
+
+  <Accordion title="Connection timeout">
+    **Error:** `operation timed out: tcp connect timeout`
+
+    **Solution:**
+    - Verify the IMAP host and port are correct
+    - Check network/firewall allows connections to port 993
+    - Increase timeout: `MAIL_IMAP_CONNECT_TIMEOUT_MS=60000`
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Search Messages" icon="magnifying-glass" href="/guides/searching-messages">
+    Learn how to search and filter messages across accounts
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/guides/error-handling">
+    Understand error responses and recovery strategies
+  </Card>
+</CardGroup>

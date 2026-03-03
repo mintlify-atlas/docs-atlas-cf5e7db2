@@ -1,0 +1,452 @@
+---
+title: 'Connection Issues'
+description: 'Troubleshooting connection timeouts and network errors'
+---
+
+This page covers connection-related errors and timeout issues.
+
+## Timeout Errors
+
+<Accordion title="Error: operation timed out: tcp connect timeout">
+  **Error Code:** `timeout`
+
+  **Full Message:**
+  ```
+  Error: operation timed out: tcp connect timeout
+  ```
+
+  **Cause:**
+  - IMAP server is unreachable
+  - Network connectivity issues
+  - Firewall blocking outbound connections
+  - Incorrect hostname or port
+  - Server is down
+
+  **Solutions:**
+
+  ### 1. Verify Server Details
+  Check that hostname and port are correct:
+
+  | Provider | Host | Port |
+  |----------|------|------|
+  | Gmail | imap.gmail.com | 993 |
+  | Outlook/Office 365 | outlook.office365.com | 993 |
+  | Yahoo | imap.mail.yahoo.com | 993 |
+  | iCloud | imap.mail.me.com | 993 |
+  | Fastmail | imap.fastmail.com | 993 |
+
+  ### 2. Test Connectivity
+  Verify network access to the IMAP server:
+
+  ```bash
+  # Test TCP connection
+  nc -zv imap.gmail.com 993
+
+  # Or using telnet
+  telnet imap.gmail.com 993
+
+  # Or using openssl
+  openssl s_client -connect imap.gmail.com:993 -crlf
+  ```
+
+  ### 3. Increase Timeout
+  If the server is slow to respond, increase the connection timeout:
+
+  ```bash
+  MAIL_IMAP_CONNECT_TIMEOUT_MS=60000  # 60 seconds (default: 30000)
+  ```
+
+  ### 4. Check Firewall Settings
+  Ensure your firewall allows outbound connections on port 993:
+
+  - Corporate networks may block IMAP ports
+  - VPN or proxy settings may interfere
+  - Check network security policies
+
+  ### 5. Verify Server Status
+  Check if the email provider is experiencing issues:
+  - Gmail: https://www.google.com/appsstatus
+  - Office 365: https://status.office.com/
+  - Check provider's status page
+</Accordion>
+
+<Accordion title="Error: operation timed out: TLS handshake timeout">
+  **Error Code:** `timeout`
+
+  **Full Message:**
+  ```
+  Error: operation timed out: TLS handshake timeout
+  ```
+
+  **Cause:**
+  - TLS negotiation taking too long
+  - Incompatible TLS versions
+  - Network latency
+  - Server overload
+
+  **Solutions:**
+
+  ### 1. Increase Greeting Timeout
+  The TLS handshake uses the greeting timeout setting:
+
+  ```bash
+  MAIL_IMAP_GREETING_TIMEOUT_MS=30000  # 30 seconds (default: 15000)
+  ```
+
+  ### 2. Check Network Quality
+  - High latency or packet loss can cause TLS timeouts
+  - Test with ping: `ping imap.gmail.com`
+  - Check for network congestion
+
+  ### 3. Verify TLS Support
+  Ensure the server supports modern TLS:
+
+  ```bash
+  # Test TLS connection
+  openssl s_client -connect imap.gmail.com:993 -tls1_2
+  ```
+
+  The server uses system root certificates (webpki-roots) and requires TLS 1.2+.
+</Accordion>
+
+<Accordion title="Error: operation timed out: IMAP greeting timeout">
+  **Error Code:** `timeout`
+
+  **Full Message:**
+  ```
+  Error: operation timed out: IMAP greeting timeout
+  ```
+
+  **Cause:**
+  - Server not sending greeting banner
+  - Server overloaded
+  - Network issues after TLS handshake
+
+  **Solution:**
+
+  ### Increase Greeting Timeout
+  ```bash
+  MAIL_IMAP_GREETING_TIMEOUT_MS=30000  # 30 seconds (default: 15000)
+  ```
+
+  ### Test IMAP Greeting
+  Verify the server responds with a greeting:
+
+  ```bash
+  openssl s_client -connect imap.gmail.com:993 -crlf -quiet
+  # Should see: * OK Gimap ready for requests from...
+  ```
+</Accordion>
+
+<Accordion title="Error: operation timed out: IMAP login timeout">
+  **Error Code:** `timeout`
+
+  **Full Message:**
+  ```
+  Error: operation timed out: IMAP login timeout
+  ```
+
+  **Cause:**
+  - Authentication taking too long
+  - Server processing delay
+  - Large account with slow mailbox indexing
+
+  **Solution:**
+
+  ### Increase Greeting Timeout
+  Login uses the greeting timeout setting:
+
+  ```bash
+  MAIL_IMAP_GREETING_TIMEOUT_MS=30000  # 30 seconds (default: 15000)
+  ```
+
+  ### Notes
+  - First login after password change may be slower
+  - Large mailboxes may take longer to authenticate
+  - Some servers perform indexing during login
+</Accordion>
+
+<Accordion title="Error: operation timed out: UID FETCH timed out">
+  **Error Code:** `timeout`
+
+  **Full Message:**
+  ```
+  Error: operation timed out: UID FETCH timed out
+  ```
+
+  **Cause:**
+  - Large message taking too long to download
+  - Slow server response
+  - Network bandwidth limitations
+
+  **Solution:**
+
+  ### Increase Socket Timeout
+  ```bash
+  MAIL_IMAP_SOCKET_TIMEOUT_MS=600000  # 10 minutes (default: 300000)
+  ```
+
+  ### For Large Messages
+  - Use `imap_get_message_raw` with appropriate `max_bytes` limit
+  - Large attachments may require longer timeouts
+  - Consider connection quality and bandwidth
+</Accordion>
+
+<Accordion title="Error: operation timed out: UID SEARCH timed out">
+  **Error Code:** `timeout`
+
+  **Full Message:**
+  ```
+  Error: operation timed out: UID SEARCH timed out
+  ```
+
+  **Cause:**
+  - Very large mailbox
+  - Complex search query
+  - Server performing full-text search
+  - Slow server
+
+  **Solutions:**
+
+  ### 1. Increase Socket Timeout
+  ```bash
+  MAIL_IMAP_SOCKET_TIMEOUT_MS=600000  # 10 minutes (default: 300000)
+  ```
+
+  ### 2. Narrow Search Query
+  Use more specific filters to reduce search time:
+
+  ```json
+  {
+    "account_id": "default",
+    "mailbox": "INBOX",
+    "last_days": 30,          // Limit to recent messages
+    "from": "example.com",    // Filter by sender
+    "unread_only": true        // Only unread messages
+  }
+  ```
+
+  ### 3. Search Smaller Mailboxes
+  If searching "All Mail" or large archive folders, try searching specific folders instead.
+</Accordion>
+
+<Accordion title="Error: operation timed out: NOOP timed out">
+  **Error Code:** `timeout`
+
+  **Full Message:**
+  ```
+  Error: operation timed out: NOOP timed out
+  ```
+
+  **Cause:**
+  - Server not responding to keepalive command
+  - Connection may be dead
+  - Server overloaded
+
+  **Solution:**
+
+  ### Increase Socket Timeout
+  ```bash
+  MAIL_IMAP_SOCKET_TIMEOUT_MS=600000  # 10 minutes (default: 300000)
+  ```
+
+  ### Check Connection
+  - This usually indicates a server issue
+  - Try reconnecting
+  - Check server status
+</Accordion>
+
+## Network Errors
+
+<Accordion title="Error: internal error: tcp connect failed: Connection refused">
+  **Error Code:** `internal`
+
+  **Full Message:**
+  ```
+  Error: internal error: tcp connect failed: Connection refused
+  ```
+
+  **Cause:**
+  - Server is not listening on the specified port
+  - Wrong port number
+  - Server is down
+  - Firewall blocking connection
+
+  **Solutions:**
+
+  ### 1. Verify Port Number
+  Standard IMAP ports:
+  - **993** - IMAP over TLS (default)
+  - ~~143~~ - Plain IMAP (not supported by this server)
+
+  ### 2. Check Server Status
+  - Verify the mail server is running
+  - Check provider status pages
+  - Test with another IMAP client
+
+  ### 3. Test Connection
+  ```bash
+  nc -zv imap.gmail.com 993
+  # Should show: Connection to imap.gmail.com port 993 [tcp/imaps] succeeded!
+  ```
+</Accordion>
+
+<Accordion title="Error: internal error: TLS handshake failed: ...">
+  **Error Code:** `internal`
+
+  **Full Message:**
+  ```
+  Error: internal error: TLS handshake failed: certificate verification failed
+  ```
+
+  **Cause:**
+  - Invalid server certificate
+  - Expired certificate
+  - Self-signed certificate (not trusted)
+  - Certificate name mismatch
+  - System root certificates out of date
+
+  **Solutions:**
+
+  ### 1. Verify Server Certificate
+  ```bash
+  openssl s_client -connect imap.gmail.com:993 -showcerts
+  # Check certificate validity and issuer
+  ```
+
+  ### 2. Update System Certificates
+  The server uses webpki-roots for certificate validation:
+
+  - Update your system's root certificates
+  - On Linux: `sudo update-ca-certificates`
+  - On macOS: Certificates update with system updates
+
+  ### 3. Check Certificate Validity
+  - Expired certificates: Contact mail provider
+  - Self-signed certificates: Not supported (use a valid certificate)
+  - Name mismatch: Ensure hostname matches certificate
+
+  ### Note
+  This server enforces strict TLS certificate validation for security. Self-signed certificates are not accepted.
+</Accordion>
+
+<Accordion title="Error: internal error: IMAP server closed connection before greeting">
+  **Error Code:** `internal`
+
+  **Full Message:**
+  ```
+  Error: internal error: IMAP server closed connection before greeting
+  ```
+
+  **Cause:**
+  - Server rejected connection immediately
+  - Too many concurrent connections
+  - IP address blocked or rate-limited
+  - Server maintenance
+
+  **Solutions:**
+
+  ### 1. Check Connection Limits
+  - Gmail: Max 15 concurrent connections per account
+  - Most servers: 3-10 concurrent connections
+  - Wait a few minutes and retry
+
+  ### 2. Verify IP Not Blocked
+  - Check if your IP is rate-limited
+  - Try from a different network
+  - Contact email provider if blocked
+
+  ### 3. Check Server Status
+  - Server may be in maintenance mode
+  - Check provider status page
+</Accordion>
+
+## Timeout Configuration
+
+### Available Timeout Settings
+
+All timeout values are in milliseconds:
+
+```bash
+# TCP connection timeout (default: 30000 = 30 seconds)
+MAIL_IMAP_CONNECT_TIMEOUT_MS=30000
+
+# TLS handshake and IMAP greeting timeout (default: 15000 = 15 seconds)
+MAIL_IMAP_GREETING_TIMEOUT_MS=15000
+
+# Socket I/O operations timeout (default: 300000 = 5 minutes)
+MAIL_IMAP_SOCKET_TIMEOUT_MS=300000
+```
+
+### Recommended Settings by Scenario
+
+**Fast, reliable network:**
+```bash
+MAIL_IMAP_CONNECT_TIMEOUT_MS=10000   # 10 seconds
+MAIL_IMAP_GREETING_TIMEOUT_MS=10000  # 10 seconds
+MAIL_IMAP_SOCKET_TIMEOUT_MS=60000    # 1 minute
+```
+
+**Slow or unreliable network:**
+```bash
+MAIL_IMAP_CONNECT_TIMEOUT_MS=60000   # 60 seconds
+MAIL_IMAP_GREETING_TIMEOUT_MS=30000  # 30 seconds
+MAIL_IMAP_SOCKET_TIMEOUT_MS=600000   # 10 minutes
+```
+
+**Large attachments or slow server:**
+```bash
+MAIL_IMAP_CONNECT_TIMEOUT_MS=30000   # 30 seconds
+MAIL_IMAP_GREETING_TIMEOUT_MS=15000  # 15 seconds
+MAIL_IMAP_SOCKET_TIMEOUT_MS=900000   # 15 minutes
+```
+
+## Diagnostic Commands
+
+### Test Network Connectivity
+
+```bash
+# Test TCP connection
+nc -zv imap.gmail.com 993
+
+# Test with timeout
+timeout 10 nc -zv imap.gmail.com 993
+
+# Check DNS resolution
+dig imap.gmail.com
+nslookup imap.gmail.com
+
+# Test latency
+ping -c 5 imap.gmail.com
+```
+
+### Test TLS Connection
+
+```bash
+# Connect with OpenSSL
+openssl s_client -connect imap.gmail.com:993 -showcerts
+
+# Test specific TLS version
+openssl s_client -connect imap.gmail.com:993 -tls1_2
+openssl s_client -connect imap.gmail.com:993 -tls1_3
+
+# Check certificate expiration
+echo | openssl s_client -connect imap.gmail.com:993 2>/dev/null | \
+  openssl x509 -noout -dates
+```
+
+### Test IMAP Protocol
+
+```bash
+# Full IMAP test (interactive)
+openssl s_client -connect imap.gmail.com:993 -crlf -quiet
+# Type: a1 LOGIN username password
+# Type: a2 LIST "" "*"
+# Type: a3 LOGOUT
+```
+
+## Related Documentation
+
+- [Authentication Issues](/troubleshooting/authentication) - Login and credential errors
+- [Common Errors](/troubleshooting/common-errors) - Other frequent errors
+- [Advanced Configuration](/configuration/advanced) - Timeout and performance tuning

@@ -1,0 +1,310 @@
+---
+title: 'imap_verify_account'
+description: 'Verify account connectivity, authentication, and server capabilities'
+---
+
+## Description
+
+Tests TCP/TLS connection, authenticates with the IMAP server, and retrieves the server's capability list. Use this tool to diagnose connection issues or verify account configuration.
+
+<Info>
+This tool executes a full connection test including NOOP command to verify bidirectional communication.
+</Info>
+
+## Input Parameters
+
+<ParamField path="body.account_id" type="string" default="default">
+  Account identifier matching an environment variable configuration.
+  
+  Pattern: `^[A-Za-z0-9_-]{1,64}$`
+</ParamField>
+
+## Response
+
+<ResponseField name="summary" type="string" required>
+  Human-readable summary of the verification outcome.
+  
+  Example: `"Account verification succeeded"`
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  <Expandable title="properties">
+    <ResponseField name="status" type="string" required>
+      Overall verification status: `"ok"`, `"partial"`, or `"failed"`.
+    </ResponseField>
+    
+    <ResponseField name="issues" type="object[]" required>
+      Array of diagnostic issues encountered during verification.
+      
+      <Expandable title="issue object">
+        <ResponseField name="code" type="string" required>
+          Error code: `"invalid_input"`, `"auth_failed"`, `"not_found"`, `"timeout"`, `"conflict"`, or `"internal"`.
+        </ResponseField>
+        
+        <ResponseField name="stage" type="string" required>
+          Operation stage where issue occurred (e.g., `"connect_authenticated"`, `"noop"`, `"capabilities"`).
+        </ResponseField>
+        
+        <ResponseField name="message" type="string" required>
+          Actionable error message.
+        </ResponseField>
+        
+        <ResponseField name="retryable" type="boolean" required>
+          Whether the operation can be retried.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="next_action" type="object" required>
+      Suggested follow-up action.
+      
+      <Expandable title="properties">
+        <ResponseField name="instruction" type="string" required>
+          Human-readable instruction for next step.
+        </ResponseField>
+        
+        <ResponseField name="tool" type="string" required>
+          Recommended tool to call next.
+        </ResponseField>
+        
+        <ResponseField name="arguments" type="object" required>
+          Suggested arguments for the next tool call.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="account_id" type="string" required>
+      Account identifier that was verified.
+    </ResponseField>
+    
+    <ResponseField name="ok" type="boolean" required>
+      Whether verification succeeded (`true` unless `status="failed"`).
+    </ResponseField>
+    
+    <ResponseField name="latency_ms" type="number" required>
+      Round-trip latency to IMAP server in milliseconds.
+    </ResponseField>
+    
+    <ResponseField name="server" type="object" required>
+      Server connection details.
+      
+      <Expandable title="properties">
+        <ResponseField name="host" type="string" required>
+          IMAP server hostname.
+        </ResponseField>
+        
+        <ResponseField name="port" type="number" required>
+          IMAP server port.
+        </ResponseField>
+        
+        <ResponseField name="secure" type="boolean" required>
+          Whether TLS is enabled.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="capabilities" type="string[]" required>
+      IMAP server capabilities (max 256). Empty array if capabilities fetch failed.
+      
+      Common capabilities include: `"IMAP4rev1"`, `"IDLE"`, `"MOVE"`, `"UIDPLUS"`, `"STARTTLS"`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="meta" type="object" required>
+  Execution metadata.
+  
+  <Expandable title="properties">
+    <ResponseField name="now_utc" type="string" required>
+      Current UTC timestamp in ISO-8601 format with milliseconds.
+    </ResponseField>
+    
+    <ResponseField name="duration_ms" type="number" required>
+      Tool execution duration in milliseconds.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Examples
+
+<CodeGroup>
+
+```json Request
+{
+  "method": "tools/call",
+  "params": {
+    "name": "imap_verify_account",
+    "arguments": {
+      "account_id": "default"
+    }
+  }
+}
+```
+
+```json Response - Success
+{
+  "summary": "Account verification succeeded",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "next_action": {
+      "instruction": "List mailboxes to see available folders",
+      "tool": "imap_list_mailboxes",
+      "arguments": {
+        "account_id": "default"
+      }
+    },
+    "account_id": "default",
+    "ok": true,
+    "latency_ms": 245,
+    "server": {
+      "host": "imap.gmail.com",
+      "port": 993,
+      "secure": true
+    },
+    "capabilities": [
+      "IMAP4rev1",
+      "IDLE",
+      "MOVE",
+      "UIDPLUS",
+      "UNSELECT",
+      "XLIST"
+    ]
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 267
+  }
+}
+```
+
+```json Response - Authentication Failed
+{
+  "summary": "Account verification succeeded",
+  "data": {
+    "status": "failed",
+    "issues": [
+      {
+        "code": "auth_failed",
+        "stage": "connect_authenticated",
+        "message": "Authentication failed: invalid credentials",
+        "retryable": false
+      }
+    ],
+    "next_action": {
+      "instruction": "Fix credentials and retry verification",
+      "tool": "imap_verify_account",
+      "arguments": {
+        "account_id": "default"
+      }
+    },
+    "account_id": "default",
+    "ok": false,
+    "latency_ms": 156,
+    "server": {
+      "host": "imap.gmail.com",
+      "port": 993,
+      "secure": true
+    },
+    "capabilities": []
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 178
+  }
+}
+```
+
+```json Response - Partial Success
+{
+  "summary": "Account verification succeeded",
+  "data": {
+    "status": "partial",
+    "issues": [
+      {
+        "code": "timeout",
+        "stage": "capabilities",
+        "message": "Capabilities fetch timed out after 5000ms",
+        "retryable": true
+      }
+    ],
+    "next_action": {
+      "instruction": "List mailboxes to see available folders",
+      "tool": "imap_list_mailboxes",
+      "arguments": {
+        "account_id": "default"
+      }
+    },
+    "account_id": "default",
+    "ok": true,
+    "latency_ms": 234,
+    "server": {
+      "host": "imap.gmail.com",
+      "port": 993,
+      "secure": true
+    },
+    "capabilities": []
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 5289
+  }
+}
+```
+
+</CodeGroup>
+
+## Error Cases
+
+### Invalid Account ID
+
+<CodeGroup>
+
+```json MCP Error Response
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "account_id must match pattern ^[A-Za-z0-9_-]{1,64}$",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 1
+  }
+}
+```
+
+</CodeGroup>
+
+### Account Not Found
+
+<CodeGroup>
+
+```json MCP Error Response
+{
+  "error": {
+    "code": "not_found",
+    "message": "Account 'unknown' not found in configuration",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2024-03-15T10:30:45.123Z",
+    "duration_ms": 2
+  }
+}
+```
+
+</CodeGroup>
+
+## Timeout Configuration
+
+Connection timeouts are configurable via environment variables:
+
+- `MAIL_IMAP_CONNECT_TIMEOUT_MS` (default: 30000) - TCP/TLS connection timeout
+- `MAIL_IMAP_GREETING_TIMEOUT_MS` (default: 15000) - Server greeting timeout
+- `MAIL_IMAP_SOCKET_TIMEOUT_MS` (default: 300000) - Socket read/write timeout
+
+## Related Tools
+
+- [imap_list_accounts](/api/imap-list-accounts) - List all configured accounts
+- [imap_list_mailboxes](/api/imap-list-mailboxes) - List mailboxes after verification succeeds

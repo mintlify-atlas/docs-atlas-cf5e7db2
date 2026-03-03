@@ -1,80 +1,331 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick start
+description: Get up and running with Mail IMAP MCP Server in minutes
 ---
 
-## Get started in three steps
+This guide walks you through setting up your first IMAP account and testing the connection. You'll go from zero to working in just a few steps.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, ensure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
 
-### Step 2: Deploy your changes
+<Step title="MCP-compatible client">
+  Install [Claude Desktop](https://claude.ai/download) or another MCP client that supports stdio servers.
+</Step>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+<Step title="IMAP credentials">
+  Obtain your IMAP server credentials:
+  - **Host**: IMAP server hostname (e.g., `imap.gmail.com`)
+  - **User**: Your email address
+  - **Password**: App-specific password (not your account password)
+</Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+<Step title="Node.js (for npm method)">
+  Install [Node.js](https://nodejs.org/) 18 or later if using the npm installation method.
+</Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+</Steps>
 
-### Step 3: Go live
+<Warning>
+**Never use your main email password.** Always generate app-specific passwords for IMAP access. See your provider's documentation for instructions:
+- [Gmail app passwords](https://support.google.com/accounts/answer/185833)
+- [iCloud app passwords](https://support.apple.com/en-us/HT204397)
+</Warning>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+## Configure Claude Desktop
 
-## Next steps
+Add the Mail IMAP MCP Server to your Claude Desktop configuration. The configuration file location varies by platform:
 
-Now that you have your docs running, explore these key features:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
-<CardGroup cols={2}>
+<CodeGroup>
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+```json Gmail
+{
+  "mcpServers": {
+    "mail-imap": {
+      "command": "npx",
+      "args": ["-y", "@bradsjm/mail-imap-mcp-rs@latest"],
+      "env": {
+        "MAIL_IMAP_DEFAULT_HOST": "imap.gmail.com",
+        "MAIL_IMAP_DEFAULT_USER": "your-email@gmail.com",
+        "MAIL_IMAP_DEFAULT_PASS": "your-app-password"
+      }
+    }
+  }
+}
+```
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+```json Outlook
+{
+  "mcpServers": {
+    "mail-imap": {
+      "command": "npx",
+      "args": ["-y", "@bradsjm/mail-imap-mcp-rs@latest"],
+      "env": {
+        "MAIL_IMAP_DEFAULT_HOST": "outlook.office365.com",
+        "MAIL_IMAP_DEFAULT_USER": "your-email@company.com",
+        "MAIL_IMAP_DEFAULT_PASS": "your-password"
+      }
+    }
+  }
+}
+```
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+```json Fastmail
+{
+  "mcpServers": {
+    "mail-imap": {
+      "command": "npx",
+      "args": ["-y", "@bradsjm/mail-imap-mcp-rs@latest"],
+      "env": {
+        "MAIL_IMAP_DEFAULT_HOST": "imap.fastmail.com",
+        "MAIL_IMAP_DEFAULT_USER": "your-email@fastmail.com",
+        "MAIL_IMAP_DEFAULT_PASS": "your-app-password"
+      }
+    }
+  }
+}
+```
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+```json iCloud
+{
+  "mcpServers": {
+    "mail-imap": {
+      "command": "npx",
+      "args": ["-y", "@bradsjm/mail-imap-mcp-rs@latest"],
+      "env": {
+        "MAIL_IMAP_DEFAULT_HOST": "imap.mail.me.com",
+        "MAIL_IMAP_DEFAULT_USER": "your-email@icloud.com",
+        "MAIL_IMAP_DEFAULT_PASS": "your-app-password"
+      }
+    }
+  }
+}
+```
 
-</CardGroup>
+</CodeGroup>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Replace `your-email@gmail.com` and `your-app-password` with your actual credentials. The `DEFAULT` account is used when no specific account is requested.
 </Note>
+
+## Environment Variables
+
+The server supports several configuration options via environment variables. Here are the most common ones:
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `MAIL_IMAP_DEFAULT_HOST` | string | **required** | IMAP server hostname |
+| `MAIL_IMAP_DEFAULT_USER` | string | **required** | Username for authentication |
+| `MAIL_IMAP_DEFAULT_PASS` | string | **required** | Password (use app-specific password) |
+| `MAIL_IMAP_DEFAULT_PORT` | number | `993` | IMAP server port |
+| `MAIL_IMAP_DEFAULT_SECURE` | boolean | `true` | Use TLS (currently enforced) |
+| `MAIL_IMAP_WRITE_ENABLED` | boolean | `false` | Enable write operations |
+| `MAIL_IMAP_CONNECT_TIMEOUT_MS` | number | `30000` | TCP connection timeout |
+| `MAIL_IMAP_GREETING_TIMEOUT_MS` | number | `15000` | IMAP greeting timeout |
+| `MAIL_IMAP_SOCKET_TIMEOUT_MS` | number | `300000` | Socket I/O timeout |
+| `MAIL_IMAP_CURSOR_TTL_SECONDS` | number | `600` | Cursor time-to-live |
+| `MAIL_IMAP_CURSOR_MAX_ENTRIES` | number | `512` | Maximum cursors to retain |
+
+See [Environment Variables](/configuration/environment-variables) for complete documentation.
+
+## Enable Write Operations
+
+By default, write operations (copy, move, delete, flag updates) are **disabled** for safety. To enable them, add:
+
+```json
+{
+  "mcpServers": {
+    "mail-imap": {
+      "command": "npx",
+      "args": ["-y", "@bradsjm/mail-imap-mcp-rs@latest"],
+      "env": {
+        "MAIL_IMAP_DEFAULT_HOST": "imap.gmail.com",
+        "MAIL_IMAP_DEFAULT_USER": "your-email@gmail.com",
+        "MAIL_IMAP_DEFAULT_PASS": "your-app-password",
+        "MAIL_IMAP_WRITE_ENABLED": "true"
+      }
+    }
+  }
+}
+```
+
+<Warning>
+Write operations can modify or delete messages. Only enable this if you trust the MCP client making requests.
+</Warning>
+
+## Test the Connection
+
+After configuring Claude Desktop, restart the application and test the connection:
+
+<Steps>
+
+<Step title="List accounts">
+  Ask Claude: "List my IMAP accounts"
+  
+  Expected response:
+  ```json
+  {
+    "summary": "1 account(s) configured",
+    "data": {
+      "accounts": [
+        {
+          "account_id": "default",
+          "host": "imap.gmail.com",
+          "port": 993,
+          "secure": true
+        }
+      ]
+    }
+  }
+  ```
+</Step>
+
+<Step title="Verify connectivity">
+  Ask Claude: "Verify my default IMAP account"
+  
+  This tests TCP/TLS connection, authentication, and retrieves server capabilities. Expected response includes `"ok": true` and a list of IMAP capabilities.
+</Step>
+
+<Step title="List mailboxes">
+  Ask Claude: "List mailboxes in my default account"
+  
+  This returns all visible folders/mailboxes like INBOX, Sent, Drafts, etc.
+</Step>
+
+<Step title="Search messages">
+  Ask Claude: "Search for recent unread messages in INBOX"
+  
+  This tests message search functionality with pagination support.
+</Step>
+
+</Steps>
+
+## Multiple Accounts
+
+Configure multiple IMAP accounts by adding account-specific environment variables:
+
+```json
+{
+  "mcpServers": {
+    "mail-imap": {
+      "command": "npx",
+      "args": ["-y", "@bradsjm/mail-imap-mcp-rs@latest"],
+      "env": {
+        "MAIL_IMAP_DEFAULT_HOST": "imap.gmail.com",
+        "MAIL_IMAP_DEFAULT_USER": "personal@gmail.com",
+        "MAIL_IMAP_DEFAULT_PASS": "app-password-1",
+        
+        "MAIL_IMAP_WORK_HOST": "outlook.office365.com",
+        "MAIL_IMAP_WORK_USER": "user@company.com",
+        "MAIL_IMAP_WORK_PASS": "app-password-2",
+        
+        "MAIL_IMAP_PERSONAL_HOST": "imap.fastmail.com",
+        "MAIL_IMAP_PERSONAL_USER": "user@fastmail.com",
+        "MAIL_IMAP_PERSONAL_PASS": "app-password-3"
+      }
+    }
+  }
+}
+```
+
+The server automatically discovers accounts by scanning for `MAIL_IMAP_*_HOST` patterns. Account IDs are normalized to lowercase (e.g., `WORK` becomes `work`).
+
+<Info>
+When calling MCP tools, specify the account using the normalized account ID: `"account_id": "work"` or `"account_id": "personal"`.
+</Info>
+
+See [Multi-Account Configuration](/guides/multi-account) for detailed examples.
+
+## Troubleshooting
+
+### Authentication failed
+
+```
+Error: authentication failed: [AUTHENTICATIONFAILED] Authentication failed.
+```
+
+**Solutions**:
+1. Verify username and password are correct
+2. Use app-specific password (not your main account password)
+3. Check that IMAP is enabled on your account
+4. Ensure 2FA is configured if required by your provider
+
+See [Authentication Troubleshooting](/troubleshooting/authentication) for more help.
+
+### Connection timeout
+
+```
+Error: operation timed out: tcp connect timeout
+```
+
+**Solutions**:
+1. Check your internet connection
+2. Verify the IMAP host and port are correct
+3. Increase timeout: `"MAIL_IMAP_CONNECT_TIMEOUT_MS": "60000"`
+4. Check if firewall is blocking port 993
+
+See [Connection Issues](/troubleshooting/connection-issues) for more help.
+
+### Write operations disabled
+
+```
+Error: invalid input: write tools are disabled; set MAIL_IMAP_WRITE_ENABLED=true
+```
+
+**Solution**: Add `"MAIL_IMAP_WRITE_ENABLED": "true"` to the `env` section in your configuration.
+
+### Account not configured
+
+```
+Error: invalid input: account 'myaccount' is not configured
+```
+
+**Solution**: Verify the account ID exists in environment variables. Account IDs must have `MAIL_IMAP_<ID>_HOST`, `_USER`, and `_PASS` variables defined.
+
+## Available Tools
+
+The server provides 10 MCP tools for email operations:
+
+### Read operations (always enabled)
+
+- **`imap_list_accounts`**: List configured accounts
+- **`imap_verify_account`**: Test connectivity and capabilities
+- **`imap_list_mailboxes`**: List mailboxes/folders
+- **`imap_search_messages`**: Search with cursor pagination
+- **`imap_get_message`**: Get parsed message details
+- **`imap_get_message_raw`**: Get RFC822 source
+
+### Write operations (require `MAIL_IMAP_WRITE_ENABLED=true`)
+
+- **`imap_update_message_flags`**: Add/remove flags
+- **`imap_copy_message`**: Copy to mailbox
+- **`imap_move_message`**: Move to mailbox
+- **`imap_delete_message`**: Delete message (requires confirmation)
+
+See [API Reference](/api/overview) for detailed documentation of each tool.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Search messages" icon="magnifying-glass" href="/guides/searching-messages">
+    Learn cursor-based pagination and search filters
+  </Card>
+  
+  <Card title="Configure accounts" icon="gear" href="/configuration/accounts">
+    Deep dive into account configuration options
+  </Card>
+  
+  <Card title="API reference" icon="code" href="/api/overview">
+    Explore all 10 MCP tools and their parameters
+  </Card>
+  
+  <Card title="Security" icon="shield" href="/security/overview">
+    Learn about security features and best practices
+  </Card>
+</CardGroup>

@@ -1,0 +1,361 @@
+---
+title: Advanced Configuration
+description: Timeout tuning, cursor pagination, and performance optimization
+---
+
+## Overview
+
+This guide covers advanced configuration options for timeout tuning, cursor pagination management, and performance optimization based on your deployment environment.
+
+## Timeout Configuration
+
+All timeout values are in **milliseconds**. Adjust based on network conditions, server performance, and workload characteristics.
+
+### Connection Timeout
+
+Time to establish TCP connection and complete TLS handshake.
+
+<ParamField path="MAIL_IMAP_CONNECT_TIMEOUT_MS" type="number" default="30000">
+  **Default**: 30,000 ms (30 seconds)
+  
+  **When to increase**:
+  - High-latency networks
+  - Slow TLS handshake on constrained systems
+  - Network congestion issues
+  
+  **Example**:
+  ```bash
+  MAIL_IMAP_CONNECT_TIMEOUT_MS=45000  # 45 seconds
+  ```
+</ParamField>
+
+### Greeting Timeout
+
+Time to receive IMAP server greeting after connection establishment.
+
+<ParamField path="MAIL_IMAP_GREETING_TIMEOUT_MS" type="number" default="15000">
+  **Default**: 15,000 ms (15 seconds)
+  
+  **When to increase**:
+  - Overloaded IMAP servers
+  - Slow authentication backends
+  - Geographically distant servers
+  
+  **Example**:
+  ```bash
+  MAIL_IMAP_GREETING_TIMEOUT_MS=30000  # 30 seconds
+  ```
+</ParamField>
+
+### Socket I/O Timeout
+
+Timeout for individual socket operations (idle, read, write). This is the timeout for most IMAP commands.
+
+<ParamField path="MAIL_IMAP_SOCKET_TIMEOUT_MS" type="number" default="300000">
+  **Default**: 300,000 ms (5 minutes)
+  
+  **When to increase**:
+  - Processing large mailboxes
+  - Slow message retrieval
+  - Complex search operations
+  
+  **When to decrease**:
+  - Need faster failure detection
+  - Implementing custom retry logic
+  
+  **Example**:
+  ```bash
+  MAIL_IMAP_SOCKET_TIMEOUT_MS=600000  # 10 minutes
+  ```
+</ParamField>
+
+## Cursor Pagination Configuration
+
+Cursor-based pagination enables efficient navigation through large search results. Cursors are stored in memory with TTL and LRU eviction.
+
+### Cursor Time-to-Live
+
+How long cursors remain valid after creation.
+
+<ParamField path="MAIL_IMAP_CURSOR_TTL_SECONDS" type="number" default="600">
+  **Default**: 600 seconds (10 minutes)
+  
+  **Trade-offs**:
+  - **Shorter TTL**: Less memory usage, more frequent re-searches needed
+  - **Longer TTL**: Better UX for slow workflows, higher memory usage
+  
+  **Example**:
+  ```bash
+  MAIL_IMAP_CURSOR_TTL_SECONDS=1800  # 30 minutes
+  ```
+</ParamField>
+
+### Cursor Storage Limit
+
+Maximum number of cursors stored in memory. When exceeded, oldest unused cursors are evicted (LRU).
+
+<ParamField path="MAIL_IMAP_CURSOR_MAX_ENTRIES" type="number" default="512">
+  **Default**: 512 entries
+  
+  **Trade-offs**:
+  - **Lower limit**: Less memory usage, cursors may expire sooner
+  - **Higher limit**: Supports more concurrent searches, higher memory usage
+  
+  **Example**:
+  ```bash
+  MAIL_IMAP_CURSOR_MAX_ENTRIES=1024  # Support more concurrent searches
+  ```
+</ParamField>
+
+## Performance Tuning Profiles
+
+### High-Volume Workloads
+
+For batch processing and large mailbox operations:
+
+```bash
+# Increase cursor capacity for many concurrent searches
+MAIL_IMAP_CURSOR_MAX_ENTRIES=1024
+
+# Longer cursor TTL for batch processing
+MAIL_IMAP_CURSOR_TTL_SECONDS=1800
+
+# Longer socket timeout for large searches
+MAIL_IMAP_SOCKET_TIMEOUT_MS=600000
+```
+
+**Use when**:
+- Processing large mailboxes (100k+ messages)
+- Running batch operations
+- Multiple concurrent search operations
+- Slow, deliberate workflows
+
+### Low-Latency Interactive Use
+
+For interactive use with quick response requirements:
+
+```bash
+# Shorter timeouts for faster failure detection
+MAIL_IMAP_CONNECT_TIMEOUT_MS=15000
+MAIL_IMAP_GREETING_TIMEOUT_MS=10000
+MAIL_IMAP_SOCKET_TIMEOUT_MS=120000
+
+# Fewer stored cursors (less memory)
+MAIL_IMAP_CURSOR_MAX_ENTRIES=256
+```
+
+**Use when**:
+- Interactive user-facing applications
+- Need fast error feedback
+- Quick request-response cycles
+- Limited search result pagination
+
+### Memory-Constrained Environments
+
+For resource-limited deployments:
+
+```bash
+# Minimal cursor storage
+MAIL_IMAP_CURSOR_MAX_ENTRIES=128
+
+# Shorter cursor TTL to free memory faster
+MAIL_IMAP_CURSOR_TTL_SECONDS=300
+
+# Tighter timeouts to fail fast
+MAIL_IMAP_SOCKET_TIMEOUT_MS=180000
+```
+
+**Use when**:
+- Running in containers with memory limits
+- Embedded systems or edge devices
+- Cost-sensitive cloud deployments
+- Single-user or low-concurrency scenarios
+
+## Port and Security Configuration
+
+### Standard IMAPS (Recommended)
+
+Implicit TLS on port 993:
+
+```bash
+MAIL_IMAP_<ACCOUNT>_PORT=993
+MAIL_IMAP_<ACCOUNT>_SECURE=true
+```
+
+<Note>
+**Only implicit TLS (IMAPS) is supported.** STARTTLS is not supported.
+</Note>
+
+### TLS Enforcement
+
+TLS is currently enforced to `true` and cannot be disabled:
+
+- TLS certificate verification is enforced
+- Hostname verification is performed
+- Connection fails if certificates cannot be validated
+
+## Multiple Accounts Configuration
+
+Configure multiple accounts with unique identifiers:
+
+```bash
+# Personal Gmail
+MAIL_IMAP_DEFAULT_HOST=imap.gmail.com
+MAIL_IMAP_DEFAULT_USER=user@gmail.com
+MAIL_IMAP_DEFAULT_PASS=app-password-1
+MAIL_IMAP_DEFAULT_PORT=993
+MAIL_IMAP_DEFAULT_SECURE=true
+
+# Work Outlook
+MAIL_IMAP_WORK_HOST=outlook.office365.com
+MAIL_IMAP_WORK_USER=user@company.com
+MAIL_IMAP_WORK_PASS=app-password-2
+MAIL_IMAP_WORK_PORT=993
+MAIL_IMAP_WORK_SECURE=true
+
+# Personal Fastmail
+MAIL_IMAP_PERSONAL_HOST=imap.fastmail.com
+MAIL_IMAP_PERSONAL_USER=user@fastmail.com
+MAIL_IMAP_PERSONAL_PASS=app-password-3
+MAIL_IMAP_PERSONAL_PORT=993
+MAIL_IMAP_PERSONAL_SECURE=true
+```
+
+### Account ID Rules
+
+- **Pattern**: `^[A-Z0-9_]+$` (uppercase in environment variables)
+- **Normalized**: Converted to lowercase for tool calls
+- **Length**: 1-64 characters
+- **Must be unique** across all accounts
+
+## Troubleshooting Performance Issues
+
+### Connection Timeouts
+
+```
+Error: operation timed out: tcp connect timeout
+```
+
+**Resolution**:
+1. Verify network connectivity to IMAP host
+2. Check firewall allows outbound on port 993
+3. Increase `MAIL_IMAP_CONNECT_TIMEOUT_MS`
+4. Try from different network to isolate issue
+
+### Socket Operation Timeouts
+
+```
+Error: operation timed out: socket operation timeout
+```
+
+**Resolution**:
+1. Increase `MAIL_IMAP_SOCKET_TIMEOUT_MS` for large operations
+2. Reduce search scope (narrower date ranges, filters)
+3. Check IMAP server performance
+4. Consider pagination with smaller `limit` values
+
+### Cursor Expired Errors
+
+```
+Error: invalid input: cursor expired or not found
+```
+
+**Resolution**:
+1. Increase `MAIL_IMAP_CURSOR_TTL_SECONDS`
+2. Increase `MAIL_IMAP_CURSOR_MAX_ENTRIES` if many concurrent searches
+3. Complete pagination faster
+4. Re-execute search to get new cursor
+
+### Memory Usage Issues
+
+**Symptoms**: High memory usage, OOM errors
+
+**Resolution**:
+1. Decrease `MAIL_IMAP_CURSOR_MAX_ENTRIES`
+2. Decrease `MAIL_IMAP_CURSOR_TTL_SECONDS`
+3. Limit concurrent operations
+4. Monitor cursor creation and eviction rates
+
+## Docker-Specific Configuration
+
+When running in Docker, pass environment variables via `--env-file` or `-e`:
+
+```bash
+# Using .env file
+docker run --rm -i \
+  --env-file .env \
+  mail-imap-mcp-rs
+
+# Using individual variables
+docker run --rm -i \
+  -e MAIL_IMAP_DEFAULT_HOST=imap.gmail.com \
+  -e MAIL_IMAP_DEFAULT_USER=user@gmail.com \
+  -e MAIL_IMAP_DEFAULT_PASS=app-password \
+  -e MAIL_IMAP_CONNECT_TIMEOUT_MS=45000 \
+  -e MAIL_IMAP_CURSOR_MAX_ENTRIES=1024 \
+  mail-imap-mcp-rs
+```
+
+<Note>
+File-based env loading (`--env-file`) takes precedence over `-e` flags.
+</Note>
+
+## Monitoring and Observability
+
+### Logging Configuration
+
+The server uses `tracing` with environment-based filtering:
+
+```bash
+# Set log level (error, warn, info, debug, trace)
+RUST_LOG=info
+
+# Module-specific logging
+RUST_LOG=mail_imap_mcp_rs=debug,imap=trace
+```
+
+Logs are written to **stderr** to avoid interfering with MCP stdio protocol.
+
+### Response Metadata
+
+All tool responses include timing metadata:
+
+```json
+{
+  "summary": "Found 42 messages",
+  "data": { ... },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 245
+  }
+}
+```
+
+Use `duration_ms` to identify slow operations and tune timeouts accordingly.
+
+## Configuration Validation
+
+View current configuration and discovered accounts:
+
+```bash
+mail-imap-mcp-rs --help
+```
+
+Output includes:
+- Discovered account sections from environment
+- Current variable values (passwords redacted)
+- Global policy defaults
+- Write gate status
+
+## Best Practices
+
+1. **Start with defaults** - Only tune when necessary based on observed behavior
+2. **Monitor performance** - Use `duration_ms` metadata to identify bottlenecks
+3. **Tune incrementally** - Make small adjustments and measure impact
+4. **Document changes** - Keep notes on why specific values were chosen
+5. **Environment-specific** - Use different configs for dev/staging/production
+6. **Review periodically** - Re-evaluate settings as workload changes
+
+<Warning>
+Avoid setting extremely high timeout values (e.g., hours) as they can mask underlying issues and prevent proper error detection.
+</Warning>

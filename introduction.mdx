@@ -1,0 +1,84 @@
+---
+title: Introduction
+description: Secure Model Context Protocol server for IMAP email access with cursor-based pagination and multi-account support
+---
+
+Mail IMAP MCP Server is a secure, efficient Model Context Protocol (MCP) server that provides read/write operations on IMAP mailboxes. Built in Rust for performance and safety, it offers structured output, cursor-based pagination, and a security-first design.
+
+## What is Mail IMAP MCP Server?
+
+Mail IMAP MCP Server enables AI assistants and applications to interact with email via the IMAP protocol through a consistent, type-safe MCP interface. It communicates over stdio and provides 10 specialized tools for comprehensive email operations—from listing mailboxes to searching messages, parsing content, and performing write operations.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Secure by default" icon="shield-check">
+    TLS-only connections with certificate verification. Passwords stored as secrets and never logged or returned in responses.
+  </Card>
+  
+  <Card title="Cursor-based pagination" icon="arrows-rotate">
+    Efficiently navigate large mailboxes with cursor-based pagination. Search results include continuation tokens for seamless browsing.
+  </Card>
+  
+  <Card title="Multi-account support" icon="users">
+    Configure multiple IMAP accounts via environment variables. Switch between personal, work, and other accounts seamlessly.
+  </Card>
+  
+  <Card title="Message parsing" icon="file-lines">
+    Extract text, headers, and attachments with automatic sanitization. Optional PDF text extraction from attachments.
+  </Card>
+  
+  <Card title="Structured output" icon="rectangle-list">
+    Consistent tool response envelope with summaries, metadata, and execution timing for all operations.
+  </Card>
+  
+  <Card title="Write operations" icon="pen-to-square">
+    Copy, move, flag, and delete operations require explicit opt-in for safety. Delete requires confirmation parameter.
+  </Card>
+  
+  <Card title="Rust-powered" icon="bolt">
+    Fast, memory-safe async/await implementation with Tokio runtime for high performance.
+  </Card>
+  
+  <Card title="10 MCP tools" icon="wrench">
+    Comprehensive email operations: list accounts, verify connectivity, search messages, get details, and modify mailboxes.
+  </Card>
+</CardGroup>
+
+## Use cases
+
+- **AI email assistants**: Enable AI to read, search, and manage email on behalf of users
+- **Email automation**: Build workflows that process incoming messages and take actions
+- **Multi-account management**: Monitor and interact with multiple email accounts from a single interface
+- **Email analytics**: Extract insights from mailbox contents with structured data access
+- **Customer support**: Build tools that help agents search and retrieve customer correspondence
+
+## Architecture
+
+Mail IMAP MCP Server is built with:
+
+- **Language**: Rust (edition 2024)
+- **Runtime**: Tokio async runtime
+- **Protocol**: Model Context Protocol (MCP) via stdio
+- **IMAP library**: async-imap with rustls for TLS
+- **Message parsing**: mailparse with ammonia HTML sanitization
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install via npm, curl, Docker, or build from source
+  </Card>
+  
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Configure your first IMAP account and start using the server
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/configuration/accounts">
+    Learn about account setup and environment variables
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore all 10 MCP tools and their parameters
+  </Card>
+</CardGroup>

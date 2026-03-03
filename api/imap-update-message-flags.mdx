@@ -1,0 +1,267 @@
+---
+title: 'imap_update_message_flags'
+description: 'Add or remove IMAP flags on a message'
+---
+
+## Overview
+
+Modifies message flags (e.g., `\Seen`, `\Flagged`, `\Draft`, custom flags) by adding or removing flags from a message. This is a non-destructive write operation that changes message metadata without affecting the message content.
+
+<Warning>
+  This tool requires `MAIL_IMAP_WRITE_ENABLED=true` to be set in your environment variables. Write operations are disabled by default as a safety measure.
+</Warning>
+
+## Common use cases
+
+- Mark messages as read/unread (`\Seen`)
+- Flag messages for follow-up (`\Flagged`)
+- Mark messages as drafts (`\Draft`)
+- Add custom labels or tags
+- Remove incorrect or outdated flags
+
+## Input parameters
+
+<ParamField path="body.account_id" type="string" default="default">
+  Account identifier. Must match pattern `^[A-Za-z0-9_-]{1,64}$`.
+</ParamField>
+
+<ParamField path="body.message_id" type="string" required>
+  Message identifier in format `imap:{account_id}:{mailbox}:{uidvalidity}:{uid}`.
+  
+  The account_id in the message_id must match the `account_id` parameter.
+</ParamField>
+
+<ParamField path="body.add_flags" type="string[]">
+  Array of flags to add (1-20 flags). At least one of `add_flags` or `remove_flags` is required.
+  
+  Common system flags:
+  - `\Seen` - Message has been read
+  - `\Answered` - Message has been replied to
+  - `\Flagged` - Message is flagged for urgent/special attention
+  - `\Deleted` - Message is marked for deletion
+  - `\Draft` - Message is a draft
+  - `\Recent` - Message is recent (read-only, cannot be set)
+  
+  Custom flags must not contain whitespace, control characters, quotes, parentheses, or braces.
+</ParamField>
+
+<ParamField path="body.remove_flags" type="string[]">
+  Array of flags to remove (1-20 flags). At least one of `add_flags` or `remove_flags` is required.
+  
+  Uses the same flag format as `add_flags`.
+</ParamField>
+
+## Response
+
+<ResponseField name="summary" type="string">
+  Human-readable one-line outcome: `"Flags updated"`
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties">
+    <ResponseField name="status" type="string">
+      Operation status: `ok`, `partial`, or `failed`
+    </ResponseField>
+    
+    <ResponseField name="issues" type="array">
+      Array of diagnostic issues encountered during execution. Each issue includes:
+      - `code` - Error category (`invalid_input`, `auth_failed`, `not_found`, `timeout`, `conflict`, `internal`)
+      - `stage` - Operation stage where issue occurred
+      - `message` - Actionable error message
+      - `retryable` - Whether the operation can be retried
+      - `uid` - Message UID (if applicable)
+      - `message_id` - Message identifier (if applicable)
+    </ResponseField>
+    
+    <ResponseField name="account_id" type="string">
+      Account identifier used for the operation
+    </ResponseField>
+    
+    <ResponseField name="message_id" type="string">
+      Message identifier that was updated
+    </ResponseField>
+    
+    <ResponseField name="flags" type="string[]">
+      Current flags on the message after the update operation. Will be `null` if flag fetch fails.
+    </ResponseField>
+    
+    <ResponseField name="requested_add_flags" type="string[]">
+      Flags that were requested to be added
+    </ResponseField>
+    
+    <ResponseField name="requested_remove_flags" type="string[]">
+      Flags that were requested to be removed
+    </ResponseField>
+    
+    <ResponseField name="applied_add_flags" type="boolean">
+      Whether the add flags operation succeeded
+    </ResponseField>
+    
+    <ResponseField name="applied_remove_flags" type="boolean">
+      Whether the remove flags operation succeeded
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="meta" type="object">
+  <Expandable title="properties">
+    <ResponseField name="now_utc" type="string">
+      ISO-8601 UTC timestamp when response was generated
+    </ResponseField>
+    
+    <ResponseField name="duration_ms" type="number">
+      Operation duration in milliseconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example request
+
+<RequestExample>
+
+```json Mark message as read and flagged
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:1234567890:42",
+  "add_flags": ["\\Seen", "\\Flagged"]
+}
+```
+
+```json Remove draft flag
+{
+  "account_id": "work",
+  "message_id": "imap:work:Drafts:9876543210:123",
+  "remove_flags": ["\\Draft"]
+}
+```
+
+```json Add custom label and remove flagged status
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:1234567890:42",
+  "add_flags": ["Important"],
+  "remove_flags": ["\\Flagged"]
+}
+```
+
+</RequestExample>
+
+## Example response
+
+<ResponseExample>
+
+```json 200 Success
+{
+  "summary": "Flags updated",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "account_id": "default",
+    "message_id": "imap:default:INBOX:1234567890:42",
+    "flags": ["\\Seen", "\\Flagged"],
+    "requested_add_flags": ["\\Seen", "\\Flagged"],
+    "requested_remove_flags": [],
+    "applied_add_flags": true,
+    "applied_remove_flags": false
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 234
+  }
+}
+```
+
+```json 200 Partial success
+{
+  "summary": "Flags updated",
+  "data": {
+    "status": "partial",
+    "issues": [
+      {
+        "code": "internal",
+        "stage": "fetch_flags",
+        "message": "Failed to retrieve current flags",
+        "retryable": true,
+        "uid": 42,
+        "message_id": "imap:default:INBOX:1234567890:42"
+      }
+    ],
+    "account_id": "default",
+    "message_id": "imap:default:INBOX:1234567890:42",
+    "flags": null,
+    "requested_add_flags": ["\\Seen"],
+    "requested_remove_flags": [],
+    "applied_add_flags": true,
+    "applied_remove_flags": false
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 456
+  }
+}
+```
+
+</ResponseExample>
+
+## Error responses
+
+<ResponseExample>
+
+```json Write operations disabled
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "write tools are disabled; set MAIL_IMAP_WRITE_ENABLED=true",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 5
+  }
+}
+```
+
+```json Missing flags parameter
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "at least one of add_flags/remove_flags is required",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 3
+  }
+}
+```
+
+```json Invalid flag format
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "add_flags contains invalid flag '\\Seen) UID FETCH 1:* (BODY[]'; flags must not contain whitespace, control chars, quotes, parentheses, or braces",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 4
+  }
+}
+```
+
+</ResponseExample>
+
+## Implementation notes
+
+- Flag operations use the `+FLAGS.SILENT` and `-FLAGS.SILENT` IMAP commands to avoid unnecessary server notifications
+- The server attempts to add flags first, then remove flags
+- Each operation is tracked separately with `applied_add_flags` and `applied_remove_flags` boolean indicators
+- After flag modifications, the server fetches the current flag list to return in the response
+- Flag validation prevents IMAP command injection by rejecting flags with special characters
+- The mailbox is selected in read-write mode, and uidvalidity is verified to ensure the message still exists
+
+## See also
+
+- [imap_get_message](/api/imap-get-message) - Retrieve message details including current flags
+- [Write operations configuration](/configuration/write-operations) - Enable write operations
+- [Message IDs](/concepts/message-ids) - Understanding message identifier format

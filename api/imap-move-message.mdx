@@ -1,0 +1,311 @@
+---
+title: 'imap_move_message'
+description: 'Move a message to a different mailbox within the same account'
+---
+
+## Overview
+
+Moves a message from its current mailbox to a destination mailbox within the same account. The message is removed from the source mailbox and appears in the destination mailbox. The server uses the native IMAP `MOVE` command when available, or falls back to `COPY` + `DELETE` + `EXPUNGE` when the server doesn't support `MOVE`.
+
+<Warning>
+  This tool requires `MAIL_IMAP_WRITE_ENABLED=true` to be set in your environment variables. Write operations are disabled by default as a safety measure.
+</Warning>
+
+<Info>
+  To move messages **between different accounts**, use `imap_copy_message` followed by `imap_delete_message`.
+</Info>
+
+## Common use cases
+
+- Move messages to Archive or Trash folders
+- Organize messages into project or category folders
+- Move spam to Junk folder
+- Relocate drafts to Sent folder after sending
+- File messages into date-based folders
+
+## Input parameters
+
+<ParamField path="body.account_id" type="string" default="default">
+  Account identifier. Must match pattern `^[A-Za-z0-9_-]{1,64}$`.
+</ParamField>
+
+<ParamField path="body.message_id" type="string" required>
+  Message identifier in format `imap:{account_id}:{mailbox}:{uidvalidity}:{uid}`.
+  
+  The account_id in the message_id must match the `account_id` parameter.
+</ParamField>
+
+<ParamField path="body.destination_mailbox" type="string" required>
+  Destination mailbox name (1-256 characters). Must not contain control characters.
+  
+  The mailbox must exist on the IMAP server. Use `imap_list_mailboxes` to see available mailboxes.
+</ParamField>
+
+## Response
+
+<ResponseField name="summary" type="string">
+  Human-readable one-line outcome: `"Message moved"`
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties">
+    <ResponseField name="status" type="string">
+      Operation status: `ok`, `partial`, or `failed`
+    </ResponseField>
+    
+    <ResponseField name="issues" type="array">
+      Array of diagnostic issues encountered during execution. Each issue includes:
+      - `code` - Error category (`invalid_input`, `auth_failed`, `not_found`, `timeout`, `conflict`, `internal`)
+      - `stage` - Operation stage where issue occurred (e.g., `uid_move`, `uid_copy`, `uid_store_deleted`, `uid_expunge`, `capabilities`)
+      - `message` - Actionable error message
+      - `retryable` - Whether the operation can be retried
+      - `uid` - Message UID (if applicable)
+      - `message_id` - Message identifier (if applicable)
+    </ResponseField>
+    
+    <ResponseField name="account_id" type="string">
+      Account identifier
+    </ResponseField>
+    
+    <ResponseField name="source_mailbox" type="string">
+      Source mailbox name where the message was located
+    </ResponseField>
+    
+    <ResponseField name="destination_mailbox" type="string">
+      Destination mailbox name where the message was moved
+    </ResponseField>
+    
+    <ResponseField name="message_id" type="string">
+      Original message identifier
+    </ResponseField>
+    
+    <ResponseField name="new_message_id" type="string">
+      New message identifier in the destination mailbox. Will be `null` if the server doesn't return UID mapping.
+    </ResponseField>
+    
+    <ResponseField name="steps_attempted" type="number">
+      Number of operation steps attempted. Varies based on whether native MOVE is used:
+      - Native MOVE: 2 steps (connect + move)
+      - Fallback: 4 steps (connect + capabilities + copy + delete + expunge)
+    </ResponseField>
+    
+    <ResponseField name="steps_succeeded" type="number">
+      Number of operation steps that completed successfully. Compare with `steps_attempted` to identify where failures occurred.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="meta" type="object">
+  <Expandable title="properties">
+    <ResponseField name="now_utc" type="string">
+      ISO-8601 UTC timestamp when response was generated
+    </ResponseField>
+    
+    <ResponseField name="duration_ms" type="number">
+      Operation duration in milliseconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example request
+
+<RequestExample>
+
+```json Move to Archive
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:1234567890:42",
+  "destination_mailbox": "Archive"
+}
+```
+
+```json Move to Trash
+{
+  "account_id": "work",
+  "message_id": "imap:work:INBOX:9876543210:123",
+  "destination_mailbox": "Trash"
+}
+```
+
+```json Move to nested folder
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:1234567890:42",
+  "destination_mailbox": "Projects/2026/Q1"
+}
+```
+
+</RequestExample>
+
+## Example response
+
+<ResponseExample>
+
+```json 200 Success with native MOVE
+{
+  "summary": "Message moved",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "account_id": "default",
+    "source_mailbox": "INBOX",
+    "destination_mailbox": "Archive",
+    "message_id": "imap:default:INBOX:1234567890:42",
+    "new_message_id": null,
+    "steps_attempted": 2,
+    "steps_succeeded": 2
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 345
+  }
+}
+```
+
+```json 200 Success with COPY+DELETE fallback
+{
+  "summary": "Message moved",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "account_id": "default",
+    "source_mailbox": "INBOX",
+    "destination_mailbox": "Archive",
+    "message_id": "imap:default:INBOX:1234567890:42",
+    "new_message_id": null,
+    "steps_attempted": 4,
+    "steps_succeeded": 4
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 567
+  }
+}
+```
+
+```json 200 Partial failure - expunge failed
+{
+  "summary": "Message moved",
+  "data": {
+    "status": "partial",
+    "issues": [
+      {
+        "code": "internal",
+        "stage": "uid_expunge",
+        "message": "Failed to expunge deleted message",
+        "retryable": true,
+        "uid": 42,
+        "message_id": "imap:default:INBOX:1234567890:42"
+      }
+    ],
+    "account_id": "default",
+    "source_mailbox": "INBOX",
+    "destination_mailbox": "Archive",
+    "message_id": "imap:default:INBOX:1234567890:42",
+    "new_message_id": null,
+    "steps_attempted": 4,
+    "steps_succeeded": 3
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 789
+  }
+}
+```
+
+</ResponseExample>
+
+## Error responses
+
+<ResponseExample>
+
+```json Write operations disabled
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "write tools are disabled; set MAIL_IMAP_WRITE_ENABLED=true",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 5
+  }
+}
+```
+
+```json Destination mailbox not found
+{
+  "error": {
+    "code": "not_found",
+    "message": "Mailbox does not exist",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 234
+  }
+}
+```
+
+```json UIDValidity mismatch
+{
+  "error": {
+    "code": "conflict",
+    "message": "message uidvalidity no longer matches mailbox",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 123
+  }
+}
+```
+
+</ResponseExample>
+
+## Implementation notes
+
+### Move strategy selection
+
+The server checks IMAP server capabilities to determine which strategy to use:
+
+**Native MOVE (preferred):**
+1. Connect and authenticate (`steps_attempted=1`)
+2. Check server capabilities (`steps_attempted=2`, internally tracked)
+3. Execute `UID MOVE` command (`steps_attempted=2`)
+
+**COPY+DELETE fallback:**
+1. Connect and authenticate (`steps_attempted=1`)
+2. Check server capabilities (`steps_attempted=2`)
+3. Copy message to destination using `UID COPY` (`steps_attempted=3`)
+4. Mark original as deleted using `UID STORE +FLAGS.SILENT (\\Deleted)` (`steps_attempted=4`)
+5. Expunge the deleted message using `UID EXPUNGE` (`steps_attempted=4`)
+
+### Atomicity considerations
+
+- **Native MOVE**: Atomic operation guaranteed by the IMAP server
+- **COPY+DELETE fallback**: Not atomic - if the delete or expunge step fails, the message will exist in both mailboxes
+
+### Partial failures
+
+When using COPY+DELETE fallback, partial failures can occur:
+
+- Copy succeeds, but delete fails: Message appears in both mailboxes
+- Copy and delete succeed, but expunge fails: Message marked as deleted but still visible in source mailbox until next expunge
+
+Check `steps_succeeded` and `issues` to determine the exact failure point.
+
+### Message visibility
+
+After a successful move:
+- The message immediately appears in the destination mailbox
+- The message is removed from the source mailbox (or marked as `\Deleted` if expunge failed)
+- The message UID changes in the destination mailbox
+- The old message_id from the source mailbox becomes invalid
+
+## See also
+
+- [imap_copy_message](/api/imap-copy-message) - Copy message without removing from source
+- [imap_delete_message](/api/imap-delete-message) - Permanently delete a message
+- [imap_list_mailboxes](/api/imap-list-mailboxes) - List available mailboxes
+- [Write operations configuration](/configuration/write-operations) - Enable write operations

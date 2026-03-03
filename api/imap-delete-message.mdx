@@ -1,0 +1,306 @@
+---
+title: 'imap_delete_message'
+description: 'Permanently delete a message from a mailbox'
+---
+
+## Overview
+
+Permanently deletes a message from the specified mailbox. The message is marked with the `\Deleted` flag and immediately expunged from the mailbox. This operation is **irreversible** and the message cannot be recovered.
+
+<Warning>
+  This tool requires `MAIL_IMAP_WRITE_ENABLED=true` to be set in your environment variables. Write operations are disabled by default as a safety measure.
+</Warning>
+
+<Danger>
+  **This operation is destructive and permanent.** The message will be permanently removed from the mailbox and cannot be recovered. Consider moving the message to a Trash folder using `imap_move_message` instead if you want the ability to recover deleted messages.
+</Danger>
+
+## Confirmation requirement
+
+<Warning>
+  The `confirm` parameter **must** be set to the literal boolean value `true`. This explicit confirmation is required to prevent accidental deletions.
+</Warning>
+
+If `confirm` is not set to `true`, the request will be rejected with an `invalid_input` error.
+
+## Common use cases
+
+- Permanently remove spam or unwanted messages
+- Delete messages after processing or archiving elsewhere
+- Clean up test or temporary messages
+- Implement retention policies for old messages
+- Free up mailbox storage space
+
+<Tip>
+  For safer deletion with recovery options, consider using `imap_move_message` to move messages to a Trash or Deleted Items folder instead of permanent deletion.
+</Tip>
+
+## Input parameters
+
+<ParamField path="body.account_id" type="string" default="default">
+  Account identifier. Must match pattern `^[A-Za-z0-9_-]{1,64}$`.
+</ParamField>
+
+<ParamField path="body.message_id" type="string" required>
+  Message identifier in format `imap:{account_id}:{mailbox}:{uidvalidity}:{uid}`.
+  
+  The account_id in the message_id must match the `account_id` parameter.
+</ParamField>
+
+<ParamField path="body.confirm" type="boolean" required>
+  Must be set to the literal boolean value `true` to confirm the deletion.
+  
+  This is a safety mechanism to prevent accidental deletions.
+</ParamField>
+
+## Response
+
+<ResponseField name="summary" type="string">
+  Human-readable one-line outcome: `"Message deleted"`
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties">
+    <ResponseField name="status" type="string">
+      Operation status: `ok`, `partial`, or `failed`
+    </ResponseField>
+    
+    <ResponseField name="issues" type="array">
+      Array of diagnostic issues encountered during execution. Each issue includes:
+      - `code` - Error category (`invalid_input`, `auth_failed`, `not_found`, `timeout`, `conflict`, `internal`)
+      - `stage` - Operation stage where issue occurred (e.g., `uid_store_deleted`, `uid_expunge`)
+      - `message` - Actionable error message
+      - `retryable` - Whether the operation can be retried
+      - `uid` - Message UID (if applicable)
+      - `message_id` - Message identifier (if applicable)
+    </ResponseField>
+    
+    <ResponseField name="account_id" type="string">
+      Account identifier
+    </ResponseField>
+    
+    <ResponseField name="mailbox" type="string">
+      Mailbox name where the message was deleted
+    </ResponseField>
+    
+    <ResponseField name="message_id" type="string">
+      Message identifier that was deleted
+    </ResponseField>
+    
+    <ResponseField name="steps_attempted" type="number">
+      Number of operation steps attempted:
+      - Step 1: Connect and authenticate
+      - Step 2: Mark message with `\Deleted` flag
+      - Step 3: Expunge the message
+    </ResponseField>
+    
+    <ResponseField name="steps_succeeded" type="number">
+      Number of operation steps that completed successfully. A successful deletion has `steps_succeeded=3`.
+      
+      If `steps_succeeded=2`, the message is marked as deleted but not yet expunged (visible with `\Deleted` flag).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="meta" type="object">
+  <Expandable title="properties">
+    <ResponseField name="now_utc" type="string">
+      ISO-8601 UTC timestamp when response was generated
+    </ResponseField>
+    
+    <ResponseField name="duration_ms" type="number">
+      Operation duration in milliseconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example request
+
+<RequestExample>
+
+```json Delete a message
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:1234567890:42",
+  "confirm": true
+}
+```
+
+```json Delete from work account
+{
+  "account_id": "work",
+  "message_id": "imap:work:Spam:9876543210:789",
+  "confirm": true
+}
+```
+
+</RequestExample>
+
+## Example response
+
+<ResponseExample>
+
+```json 200 Success
+{
+  "summary": "Message deleted",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "account_id": "default",
+    "mailbox": "INBOX",
+    "message_id": "imap:default:INBOX:1234567890:42",
+    "steps_attempted": 3,
+    "steps_succeeded": 3
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 456
+  }
+}
+```
+
+```json 200 Partial success - expunge failed
+{
+  "summary": "Message deleted",
+  "data": {
+    "status": "partial",
+    "issues": [
+      {
+        "code": "internal",
+        "stage": "uid_expunge",
+        "message": "Failed to expunge message",
+        "retryable": true,
+        "uid": 42,
+        "message_id": "imap:default:INBOX:1234567890:42"
+      }
+    ],
+    "account_id": "default",
+    "mailbox": "INBOX",
+    "message_id": "imap:default:INBOX:1234567890:42",
+    "steps_attempted": 3,
+    "steps_succeeded": 2
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 567
+  }
+}
+```
+
+</ResponseExample>
+
+## Error responses
+
+<ResponseExample>
+
+```json Write operations disabled
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "write tools are disabled; set MAIL_IMAP_WRITE_ENABLED=true",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 5
+  }
+}
+```
+
+```json Missing confirmation
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "delete requires confirm=true",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 3
+  }
+}
+```
+
+```json Message not found
+{
+  "error": {
+    "code": "not_found",
+    "message": "Message not found in mailbox",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 234
+  }
+}
+```
+
+```json UIDValidity mismatch
+{
+  "error": {
+    "code": "conflict",
+    "message": "message uidvalidity no longer matches mailbox",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 123
+  }
+}
+```
+
+</ResponseExample>
+
+## Implementation notes
+
+### Deletion process
+
+The deletion operation consists of three steps:
+
+1. **Connect and authenticate** (`steps_attempted=1`)
+   - Opens a connection to the IMAP server
+   - Authenticates with the account credentials
+   - Selects the mailbox in read-write mode
+   - Verifies the message's uidvalidity matches the current mailbox state
+
+2. **Mark as deleted** (`steps_attempted=2`)
+   - Adds the `\Deleted` flag to the message using `UID STORE +FLAGS.SILENT (\Deleted)`
+   - The message remains visible but is marked for deletion
+
+3. **Expunge** (`steps_attempted=3`)
+   - Permanently removes the message using `UID EXPUNGE`
+   - The message is immediately removed from the mailbox
+   - The message cannot be recovered after this step
+
+### Partial deletion states
+
+If `steps_succeeded=2` but the expunge fails:
+- The message has the `\Deleted` flag set
+- The message is still visible in the mailbox (to IMAP clients that show deleted messages)
+- The next EXPUNGE operation (from any client) will permanently remove it
+- Some email clients hide messages with `\Deleted` flag automatically
+
+### Safety guarantees
+
+- **Explicit confirmation required**: The `confirm` parameter must be exactly `true`
+- **Write gate check**: `MAIL_IMAP_WRITE_ENABLED=true` must be set
+- **UIDValidity verification**: Ensures the message hasn't changed since the message_id was obtained
+- **Atomic flag+expunge**: Uses `UID EXPUNGE` to expunge only the specific message, not all deleted messages
+
+### Recovery options
+
+<Danger>
+  Once a message is expunged, it **cannot be recovered** through the IMAP protocol. Some email providers may offer server-side recovery options through their web interfaces, but this is not guaranteed.
+</Danger>
+
+Safer alternatives:
+- Use `imap_move_message` to move to a Trash folder
+- Implement a soft-delete workflow with custom flags
+- Archive messages to external storage before deletion
+
+## See also
+
+- [imap_move_message](/api/imap-move-message) - Move message to Trash (recoverable)
+- [imap_update_message_flags](/api/imap-update-message-flags) - Add `\Deleted` flag without expunging
+- [Write operations configuration](/configuration/write-operations) - Enable write operations
+- [Message IDs](/concepts/message-ids) - Understanding message identifier format

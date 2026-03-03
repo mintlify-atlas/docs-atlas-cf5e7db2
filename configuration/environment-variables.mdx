@@ -1,0 +1,261 @@
+---
+title: Environment Variables Reference
+description: Complete reference for all environment variables
+---
+
+## Account Configuration
+
+Account variables follow the pattern `MAIL_IMAP_<ACCOUNT>_<KEY>`. The server discovers accounts by scanning for `MAIL_IMAP_*_HOST` variables.
+
+### Required Per Account
+
+<ParamField path="MAIL_IMAP_<ACCOUNT>_HOST" type="string" required>
+  IMAP server hostname
+  
+  **Examples**: `imap.gmail.com`, `outlook.office365.com`, `imap.fastmail.com`
+</ParamField>
+
+<ParamField path="MAIL_IMAP_<ACCOUNT>_USER" type="string" required>
+  Username for authentication (typically email address)
+  
+  **Examples**: `user@gmail.com`, `user@company.com`
+</ParamField>
+
+<ParamField path="MAIL_IMAP_<ACCOUNT>_PASS" type="string" required>
+  Password for authentication
+  
+  <Warning>
+  Stored using `SecretString` type. Never logged or returned in responses. Use app-specific passwords when available.
+  </Warning>
+</ParamField>
+
+### Optional Per Account
+
+<ParamField path="MAIL_IMAP_<ACCOUNT>_PORT" type="number" default="993">
+  IMAP server port
+  
+  **Standard IMAPS port**: 993 (implicit TLS)
+  
+  **Validation**: Must be a valid `u16` (1-65535)
+</ParamField>
+
+<ParamField path="MAIL_IMAP_<ACCOUNT>_SECURE" type="boolean" default="true">
+  Whether to use TLS encryption
+  
+  **Currently enforced to `true`**. Only implicit TLS (IMAPS) is supported.
+  
+  **Accepted values** (case-insensitive):
+  - Truthy: `1`, `true`, `yes`, `y`, `on`
+  - Falsy: `0`, `false`, `no`, `n`, `off`
+</ParamField>
+
+## Global Server Configuration
+
+These variables apply server-wide to all accounts and operations.
+
+### Write Operations
+
+<ParamField path="MAIL_IMAP_WRITE_ENABLED" type="boolean" default="false">
+  Enable write operations (copy, move, delete, flag updates)
+  
+  <Warning>
+  Write operations are **disabled by default** for safety. Only enable if you need to modify mailboxes.
+  </Warning>
+  
+  **Affects tools**:
+  - `imap_update_message_flags`
+  - `imap_copy_message`
+  - `imap_move_message`
+  - `imap_delete_message`
+  
+  **Accepted values** (case-insensitive):
+  - Truthy: `1`, `true`, `yes`, `y`, `on`
+  - Falsy: `0`, `false`, `no`, `n`, `off`
+</ParamField>
+
+### Connection Timeouts
+
+<ParamField path="MAIL_IMAP_CONNECT_TIMEOUT_MS" type="number" default="30000">
+  TCP connection timeout in milliseconds
+  
+  **Default**: 30,000 ms (30 seconds)
+  
+  **When to increase**:
+  - High-latency networks
+  - Slow TLS handshake on constrained systems
+  - Network congestion issues
+  
+  **Validation**: Must be a valid `u64`
+</ParamField>
+
+<ParamField path="MAIL_IMAP_GREETING_TIMEOUT_MS" type="number" default="15000">
+  IMAP server greeting timeout in milliseconds
+  
+  **Default**: 15,000 ms (15 seconds)
+  
+  **When to increase**:
+  - Overloaded IMAP servers
+  - Slow authentication backends
+  - Geographically distant servers
+  
+  **Validation**: Must be a valid `u64`
+</ParamField>
+
+<ParamField path="MAIL_IMAP_SOCKET_TIMEOUT_MS" type="number" default="300000">
+  Socket I/O timeout in milliseconds (idle, read, write)
+  
+  **Default**: 300,000 ms (5 minutes)
+  
+  **When to increase**:
+  - Processing large mailboxes
+  - Slow message retrieval
+  - Complex search operations
+  
+  **When to decrease**:
+  - Need faster failure detection
+  - Implementing custom retry logic
+  
+  **Validation**: Must be a valid `u64`
+</ParamField>
+
+### Cursor Pagination
+
+<ParamField path="MAIL_IMAP_CURSOR_TTL_SECONDS" type="number" default="600">
+  Time-to-live for search cursors in seconds
+  
+  **Default**: 600 seconds (10 minutes)
+  
+  **Trade-offs**:
+  - **Shorter TTL**: Less memory usage, more frequent re-searches needed
+  - **Longer TTL**: Better UX for slow workflows, higher memory usage
+  
+  **Validation**: Must be a valid `u64`
+</ParamField>
+
+<ParamField path="MAIL_IMAP_CURSOR_MAX_ENTRIES" type="number" default="512">
+  Maximum number of cursors to retain (LRU eviction when exceeded)
+  
+  **Default**: 512 entries
+  
+  **Trade-offs**:
+  - **Lower limit**: Less memory usage, cursors may expire sooner
+  - **Higher limit**: Supports more concurrent searches, higher memory usage
+  
+  **Validation**: Must be a valid `usize`
+</ParamField>
+
+## Environment Variable Priority
+
+Variables are loaded in the following order:
+
+1. **Required per account** - Must be set for each discovered account:
+   - `MAIL_IMAP_<ACCOUNT>_HOST`
+   - `MAIL_IMAP_<ACCOUNT>_USER`
+   - `MAIL_IMAP_<ACCOUNT>_PASS`
+
+2. **Optional per account** - Use defaults if not set:
+   - `MAIL_IMAP_<ACCOUNT>_PORT` (default: 993)
+   - `MAIL_IMAP_<ACCOUNT>_SECURE` (default: true)
+
+3. **Global server-wide** - Apply to all operations:
+   - `MAIL_IMAP_WRITE_ENABLED` (default: false)
+   - `MAIL_IMAP_CONNECT_TIMEOUT_MS` (default: 30000)
+   - `MAIL_IMAP_GREETING_TIMEOUT_MS` (default: 15000)
+   - `MAIL_IMAP_SOCKET_TIMEOUT_MS` (default: 300000)
+   - `MAIL_IMAP_CURSOR_TTL_SECONDS` (default: 600)
+   - `MAIL_IMAP_CURSOR_MAX_ENTRIES` (default: 512)
+
+## Loading from .env Files
+
+The server automatically loads environment variables from `.env` files using `dotenvy`:
+
+```bash .env
+# Account configuration
+MAIL_IMAP_DEFAULT_HOST=imap.gmail.com
+MAIL_IMAP_DEFAULT_USER=user@gmail.com
+MAIL_IMAP_DEFAULT_PASS=app-password
+
+# Global settings
+MAIL_IMAP_WRITE_ENABLED=false
+MAIL_IMAP_CONNECT_TIMEOUT_MS=30000
+MAIL_IMAP_CURSOR_TTL_SECONDS=600
+```
+
+<Warning>
+**Never commit `.env` files to version control.** Add `.env` to your `.gitignore`.
+</Warning>
+
+## Docker Configuration
+
+When running in Docker, pass environment variables using `--env-file` or `-e` flags:
+
+```bash
+# Using .env file
+docker run --rm -i --env-file .env mail-imap-mcp-rs
+
+# Using individual variables
+docker run --rm -i \
+  -e MAIL_IMAP_DEFAULT_HOST=imap.gmail.com \
+  -e MAIL_IMAP_DEFAULT_USER=user@gmail.com \
+  -e MAIL_IMAP_DEFAULT_PASS=app-password \
+  mail-imap-mcp-rs
+```
+
+<Note>
+File-based env loading (`--env-file`) takes precedence over `-e` flags in Docker.
+</Note>
+
+## Validation and Error Handling
+
+### Boolean Parsing
+
+Boolean environment variables accept flexible values (case-insensitive):
+
+**Truthy**: `1`, `true`, `yes`, `y`, `on`
+
+**Falsy**: `0`, `false`, `no`, `n`, `off`
+
+Unrecognized values result in an error:
+
+```
+Error: invalid input: invalid boolean environment variable MAIL_IMAP_WRITE_ENABLED: 'maybe'
+```
+
+### Numeric Parsing
+
+Numeric variables must be valid integers within the type's range:
+
+```
+Error: invalid input: invalid u16 environment variable MAIL_IMAP_DEFAULT_PORT: '99999'
+```
+
+### Missing Required Variables
+
+```
+Error: invalid input: No IMAP accounts configured. Set MAIL_IMAP_<ID>_HOST/USER/PASS.
+mail-imap-mcp-rs startup error: missing HOST.
+```
+
+### Non-Unicode Values
+
+```
+Error: invalid input: environment variable MAIL_IMAP_DEFAULT_HOST contains non-unicode data
+```
+
+## Viewing Current Configuration
+
+Run the server with `--help` to see discovered accounts and current configuration:
+
+```bash
+mail-imap-mcp-rs --help
+```
+
+Output includes:
+- Discovered account sections
+- Current environment variable values (passwords redacted)
+- Global policy defaults
+- Write gate policy status
+
+<Note>
+Passwords and secret-like keys (`*_PASS`, `*_TOKEN`, `*_SECRET`) are automatically redacted in help output.
+</Note>

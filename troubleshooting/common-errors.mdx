@@ -1,0 +1,417 @@
+---
+title: 'Common Errors'
+description: 'Common error messages and their solutions'
+---
+
+This page covers the most frequently encountered errors and their solutions.
+
+## Write Operations Disabled
+
+<Accordion title="Error: invalid input: write tools are disabled">
+  **Error Code:** `invalid_input`
+
+  **Full Message:**
+  ```
+  Error: invalid input: write tools are disabled; set MAIL_IMAP_WRITE_ENABLED=true
+  ```
+
+  **Cause:**
+  Write operations (copy, move, delete, flag updates) are disabled by default for safety.
+
+  **Solution:**
+  1. Add `MAIL_IMAP_WRITE_ENABLED=true` to your environment configuration
+  2. Restart the MCP server
+  3. Verify the setting is applied by running `imap_verify_account`
+
+  **Example Configuration:**
+  ```json
+  {
+    "mcpServers": {
+      "mail-imap": {
+        "command": "npx",
+        "args": ["-y", "@bradsjm/mail-imap-mcp-rs@latest"],
+        "env": {
+          "MAIL_IMAP_DEFAULT_HOST": "imap.gmail.com",
+          "MAIL_IMAP_DEFAULT_USER": "user@gmail.com",
+          "MAIL_IMAP_DEFAULT_PASS": "app-password",
+          "MAIL_IMAP_WRITE_ENABLED": "true"
+        }
+      }
+    }
+  }
+  ```
+</Accordion>
+
+## Cursor and Pagination Errors
+
+<Accordion title="Error: invalid input: cursor is invalid or expired">
+  **Error Code:** `invalid_input`
+
+  **Full Message:**
+  ```
+  Error: invalid input: cursor is invalid or expired
+  ```
+
+  **Cause:**
+  - Cursor has expired (default TTL: 10 minutes)
+  - Cursor was evicted from the LRU cache (default max: 512 cursors)
+  - Server was restarted
+
+  **Solution:**
+  Rerun the search without a cursor parameter to start a fresh search:
+
+  ```json
+  {
+    "account_id": "default",
+    "mailbox": "INBOX",
+    "limit": 20
+  }
+  ```
+
+  **To Increase Cursor Lifetime:**
+  ```bash
+  MAIL_IMAP_CURSOR_TTL_SECONDS=1800  # 30 minutes
+  MAIL_IMAP_CURSOR_MAX_ENTRIES=1024  # More cursors
+  ```
+</Accordion>
+
+<Accordion title="Error: invalid input: search matched 25000 messages; narrow filters">
+  **Error Code:** `invalid_input`
+
+  **Full Message:**
+  ```
+  Error: invalid input: search matched 25000 messages; narrow filters to at most 20000 results
+  ```
+
+  **Cause:**
+  Search query matched too many messages (limit: 20,000 UIDs per cursor snapshot).
+
+  **Solution:**
+  Add more specific search filters:
+
+  1. **Use date ranges:**
+     ```json
+     {
+       "account_id": "default",
+       "mailbox": "INBOX",
+       "last_days": 30
+     }
+     ```
+
+  2. **Filter by sender:**
+     ```json
+     {
+       "account_id": "default",
+       "mailbox": "INBOX",
+       "from": "example.com"
+     }
+     ```
+
+  3. **Combine multiple filters:**
+     ```json
+     {
+       "account_id": "default",
+       "mailbox": "INBOX",
+       "last_days": 60,
+       "subject": "Invoice",
+       "from": "billing@"
+     }
+     ```
+
+  4. **Use unread filter:**
+     ```json
+     {
+       "account_id": "default",
+       "mailbox": "INBOX",
+       "unread_only": true
+     }
+     ```
+</Accordion>
+
+<Accordion title="Error: conflict: mailbox snapshot changed; rerun search">
+  **Error Code:** `conflict`
+
+  **Full Message:**
+  ```
+  Error: conflict: mailbox snapshot changed; rerun search
+  ```
+
+  **Cause:**
+  The mailbox's `UIDVALIDITY` value changed, indicating:
+  - Mailbox was deleted and recreated
+  - Server reset the mailbox state
+  - Mailbox was migrated
+
+  **Solution:**
+  Rerun the search without a cursor to create a new snapshot with the updated UIDVALIDITY:
+
+  ```json
+  {
+    "account_id": "default",
+    "mailbox": "INBOX",
+    "limit": 20
+  }
+  ```
+
+  **Note:** Previous message IDs are now invalid and cannot be used to fetch messages.
+</Accordion>
+
+## Mailbox Errors
+
+<Accordion title="Error: not found: cannot examine mailbox 'Folder': ...">
+  **Error Code:** `not_found`
+
+  **Full Message:**
+  ```
+  Error: not found: cannot examine mailbox 'Archive/2024': ...
+  ```
+
+  **Cause:**
+  - Mailbox does not exist
+  - Mailbox name is misspelled
+  - Incorrect delimiter used in hierarchical mailbox names
+
+  **Solution:**
+  1. List all mailboxes to verify the exact name:
+     ```json
+     {
+       "tool": "imap_list_mailboxes",
+       "arguments": {
+         "account_id": "default"
+       }
+     }
+     ```
+
+  2. Use the exact mailbox name from the list (case-sensitive)
+  3. Pay attention to the delimiter (`.` vs `/` vs other)
+
+  **Common Mailbox Names:**
+  - Gmail: `INBOX`, `[Gmail]/Sent Mail`, `[Gmail]/Trash`
+  - Office 365: `INBOX`, `Sent Items`, `Deleted Items`
+  - Generic IMAP: `INBOX`, `Sent`, `Trash`, `Drafts`
+</Accordion>
+
+<Accordion title="Error: not found: account 'work' is not configured">
+  **Error Code:** `not_found`
+
+  **Full Message:**
+  ```
+  Error: not found: account 'work' is not configured
+  ```
+
+  **Cause:**
+  The specified account ID was not found in the environment configuration.
+
+  **Solution:**
+  1. List configured accounts:
+     ```json
+     {
+       "tool": "imap_list_accounts"
+     }
+     ```
+
+  2. Add the missing account to your environment:
+     ```bash
+     MAIL_IMAP_WORK_HOST=outlook.office365.com
+     MAIL_IMAP_WORK_USER=user@company.com
+     MAIL_IMAP_WORK_PASS=app-password
+     ```
+
+  3. Restart the MCP server
+
+  **Account ID Rules:**
+  - Lowercase conversion: `WORK` → `work`, `PERSONAL` → `personal`
+  - Special case: `DEFAULT` → `default`
+  - Non-alphanumeric characters become underscores
+</Accordion>
+
+## Message Errors
+
+<Accordion title="Error: not found: message uid 12345 not found">
+  **Error Code:** `not_found`
+
+  **Full Message:**
+  ```
+  Error: not found: message uid 12345 not found
+  ```
+
+  **Cause:**
+  - Message was deleted
+  - Message was moved to another mailbox
+  - UID is incorrect
+  - UIDVALIDITY changed (mailbox was reset)
+
+  **Solution:**
+  1. Search for the message again to get current UID:
+     ```json
+     {
+       "account_id": "default",
+       "mailbox": "INBOX",
+       "subject": "Meeting Notes"
+     }
+     ```
+
+  2. Use the message ID from search results (not raw UIDs)
+  3. If the message was moved, search in other mailboxes
+</Accordion>
+
+<Accordion title="Error: invalid input: message_id must start with 'imap'">
+  **Error Code:** `invalid_input`
+
+  **Full Message:**
+  ```
+  Error: invalid input: message_id must start with 'imap'
+  ```
+
+  **Cause:**
+  Invalid message ID format provided.
+
+  **Solution:**
+  Use the complete message ID returned by `imap_search_messages`:
+
+  **Correct Format:**
+  ```
+  imap://{account_id}/{mailbox}?uidvalidity={uidvalidity}&uid={uid}
+  ```
+
+  **Example:**
+  ```
+  imap://default/INBOX?uidvalidity=1234567890&uid=4567
+  ```
+
+  **Common Mistakes:**
+  - Using raw UID instead of full message ID
+  - Copying partial message ID
+  - Manually constructing message ID with wrong format
+</Accordion>
+
+## Configuration Errors
+
+<Accordion title="Error: No IMAP accounts configured. Set MAIL_IMAP_<ID>_HOST/USER/PASS">
+  **Error Code:** `invalid_input`
+
+  **Full Message:**
+  ```
+  No IMAP accounts configured. Set MAIL_IMAP_<ID>_HOST/USER/PASS.
+  mail-imap-mcp-rs startup error: missing HOST.
+  ```
+
+  **Cause:**
+  Required environment variables are not set or are empty.
+
+  **Solution:**
+  Configure at least one IMAP account:
+
+  ```json
+  {
+    "mcpServers": {
+      "mail-imap": {
+        "command": "npx",
+        "args": ["-y", "@bradsjm/mail-imap-mcp-rs@latest"],
+        "env": {
+          "MAIL_IMAP_DEFAULT_HOST": "imap.gmail.com",
+          "MAIL_IMAP_DEFAULT_USER": "your-email@gmail.com",
+          "MAIL_IMAP_DEFAULT_PASS": "your-app-password"
+        }
+      }
+    }
+  }
+  ```
+
+  **Required Variables:**
+  - `MAIL_IMAP_<ID>_HOST` - IMAP server hostname
+  - `MAIL_IMAP_<ID>_USER` - Username/email
+  - `MAIL_IMAP_<ID>_PASS` - Password (use app-specific password)
+
+  **Optional Variables:**
+  - `MAIL_IMAP_<ID>_PORT` - Default: 993
+  - `MAIL_IMAP_<ID>_SECURE` - Default: true
+</Accordion>
+
+<Accordion title="Error: invalid input: insecure IMAP is not supported">
+  **Error Code:** `invalid_input`
+
+  **Full Message:**
+  ```
+  Error: invalid input: insecure IMAP is not supported; set MAIL_IMAP_<ACCOUNT>_SECURE=true
+  ```
+
+  **Cause:**
+  `MAIL_IMAP_<ACCOUNT>_SECURE=false` was set, but the server enforces TLS-only connections.
+
+  **Solution:**
+  Remove the `SECURE=false` setting or set it to `true`:
+
+  ```bash
+  # Remove this line:
+  MAIL_IMAP_DEFAULT_SECURE=false
+
+  # Or explicitly set to true:
+  MAIL_IMAP_DEFAULT_SECURE=true
+  ```
+
+  **Security Note:**
+  Insecure connections are permanently disabled to prevent password exposure over unencrypted connections.
+</Accordion>
+
+## Validation Errors
+
+<Accordion title="Error: invalid input: invalid date '2024-13-01', expected YYYY-MM-DD">
+  **Error Code:** `invalid_input`
+
+  **Cause:**
+  Date format is incorrect or values are out of range.
+
+  **Solution:**
+  Use ISO 8601 date format (YYYY-MM-DD):
+
+  **Correct Examples:**
+  ```json
+  {
+    "since_date": "2024-01-15",
+    "before_date": "2024-12-31"
+  }
+  ```
+
+  **Invalid Examples:**
+  ```json
+  // Wrong format
+  "since_date": "01/15/2024"  // ❌
+  "since_date": "15-01-2024"  // ❌
+  "since_date": "2024-13-01"  // ❌ Month > 12
+  ```
+</Accordion>
+
+<Accordion title="Error: invalid input: body_max_chars must be between 100 and 20000">
+  **Error Code:** `invalid_input`
+
+  **Cause:**
+  Input parameter is outside the allowed range.
+
+  **Solution:**
+  Use values within the documented bounds:
+
+  | Parameter | Minimum | Maximum |
+  |-----------|---------|----------|
+  | `body_max_chars` | 100 | 20,000 |
+  | `snippet_max_chars` | 50 | 500 |
+  | `attachment_text_max_chars` | 100 | 50,000 |
+  | `max_bytes` (raw message) | 1,024 | 1,000,000 |
+  | `limit` (search) | 1 | 50 |
+
+  **Example:**
+  ```json
+  {
+    "message_id": "imap://default/INBOX?uidvalidity=123&uid=456",
+    "body_max_chars": 5000,  // ✓ Valid
+    "include_html": true
+  }
+  ```
+</Accordion>
+
+## Related Documentation
+
+- [Connection Issues](/troubleshooting/connection-issues) - Timeouts and network errors
+- [Authentication Problems](/troubleshooting/authentication) - Login and credential errors
+- [Message ID Format](/concepts/message-ids) - Understanding message identifiers
+- [Cursor Pagination](/concepts/cursor-pagination) - Pagination behavior details

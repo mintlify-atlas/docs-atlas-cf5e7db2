@@ -1,0 +1,598 @@
+---
+title: "Error Handling"
+description: "Understanding error responses and recovery patterns"
+icon: "triangle-exclamation"
+---
+
+## Overview
+
+The Mail IMAP MCP Server uses a structured error model that maps application errors to MCP protocol error codes. Understanding error types and their recovery patterns is essential for robust integration.
+
+## Error Categories
+
+All errors are categorized into six types, each with specific causes and recovery strategies.
+
+### Invalid Input
+
+**Code:** `invalid_input`  
+**MCP Type:** `invalid_params`  
+**Retryable:** No
+
+Input validation failed. The request contains malformed data, missing required fields, or values outside acceptable ranges.
+
+<Accordion title="Common causes" icon="list">
+  - Invalid `account_id` (not configured)
+  - Malformed `message_id` format
+  - `limit` outside 1-50 range
+  - `body_max_chars` outside 100-20,000 range
+  - Search matched > 20,000 messages
+  - Cursor invalid or expired
+  - Write operations disabled but write tool called
+  - Delete operation missing `confirm: true`
+</Accordion>
+
+<CodeGroup>
+```json Example: Invalid account
+{
+  "error": {
+    "code": -32602,
+    "message": "invalid input: account 'unknown' not configured",
+    "data": {
+      "code": "invalid_input"
+    }
+  }
+}
+```
+
+```json Example: Invalid limit
+{
+  "error": {
+    "code": -32602,
+    "message": "invalid input: limit must be between 1 and 50",
+    "data": {
+      "code": "invalid_input"
+    }
+  }
+}
+```
+
+```json Example: Search too broad
+{
+  "error": {
+    "code": -32602,
+    "message": "invalid input: search matched 25000 messages; narrow filters to at most 20000 results",
+    "data": {
+      "code": "invalid_input"
+    }
+  }
+}
+```
+</CodeGroup>
+
+**Recovery:**
+- Validate input parameters before submission
+- Check configuration for valid account IDs
+- Add more specific filters to narrow search results
+- Ensure write operations are enabled when needed
+
+### Not Found
+
+**Code:** `not_found`  
+**MCP Type:** `resource_not_found`  
+**Retryable:** No
+
+The requested resource does not exist or is not accessible.
+
+<Accordion title="Common causes" icon="list">
+  - Mailbox name doesn't exist
+  - Message UID no longer exists (deleted)
+  - Account not configured
+  - Mailbox not accessible with current permissions
+</Accordion>
+
+<CodeGroup>
+```json Example: Mailbox not found
+{
+  "error": {
+    "code": -32002,
+    "message": "not found: mailbox 'NonExistent' does not exist",
+    "data": {
+      "code": "not_found"
+    }
+  }
+}
+```
+
+```json Example: Message not found
+{
+  "error": {
+    "code": -32002,
+    "message": "not found: message UID 12345 not found in mailbox",
+    "data": {
+      "code": "not_found"
+    }
+  }
+}
+```
+</CodeGroup>
+
+**Recovery:**
+- Use `imap_list_mailboxes` to verify mailbox names
+- Check if message still exists before fetching
+- Verify account configuration with `imap_list_accounts`
+
+### Authentication Failed
+
+**Code:** `auth_failed`  
+**MCP Type:** `invalid_request`  
+**Retryable:** No (until credentials updated)
+
+IMAP authentication failed due to incorrect credentials or account restrictions.
+
+<Accordion title="Common causes" icon="list">
+  - Incorrect username or password
+  - Using account password instead of app-specific password
+  - IMAP access disabled for account
+  - Account locked or suspended
+  - Two-factor authentication required
+</Accordion>
+
+```json Example: Authentication failure
+{
+  "error": {
+    "code": -32600,
+    "message": "authentication failed: [AUTHENTICATIONFAILED] Invalid credentials",
+    "data": {
+      "code": "auth_failed"
+    }
+  }
+}
+```
+
+**Recovery:**
+- Verify credentials are correct
+- Generate app-specific password for Gmail/Outlook
+- Enable IMAP access in email provider settings
+- Check account status with provider
+
+### Timeout
+
+**Code:** `timeout`  
+**MCP Type:** `internal_error`  
+**Retryable:** Yes
+
+Operation exceeded configured timeout duration.
+
+<Accordion title="Common causes" icon="list">
+  - TCP connect timeout (default: 30s)
+  - TLS handshake timeout
+  - IMAP server not responding
+  - Network connectivity issues
+  - Large mailbox operations taking too long
+</Accordion>
+
+<CodeGroup>
+```json Example: Connect timeout
+{
+  "error": {
+    "code": -32603,
+    "message": "operation timed out: tcp connect timeout",
+    "data": {
+      "code": "timeout"
+    }
+  }
+}
+```
+
+```json Example: Command timeout
+{
+  "error": {
+    "code": -32603,
+    "message": "operation timed out: IMAP command timeout",
+    "data": {
+      "code": "timeout"
+    }
+  }
+}
+```
+</CodeGroup>
+
+**Recovery:**
+- Retry the operation (transient network issue)
+- Increase timeout values via environment variables:
+  ```bash
+  MAIL_IMAP_CONNECT_TIMEOUT_MS=60000
+  MAIL_IMAP_SOCKET_TIMEOUT_MS=120000
+  ```
+- Check network connectivity
+- Reduce scope of operation (smaller search, fewer messages)
+
+### Conflict
+
+**Code:** `conflict`  
+**MCP Type:** `invalid_request`  
+**Retryable:** Yes (with new request)
+
+The resource state changed since it was last accessed, making the current operation invalid.
+
+<Accordion title="Common causes" icon="list">
+  - Mailbox UIDVALIDITY changed during pagination
+  - Mailbox was deleted and recreated
+  - Message moved/deleted between operations
+  - Cursor references outdated mailbox state
+</Accordion>
+
+```json Example: Mailbox snapshot changed
+{
+  "error": {
+    "code": -32600,
+    "message": "conflict: mailbox snapshot changed; rerun search",
+    "data": {
+      "code": "conflict"
+    }
+  }
+}
+```
+
+**Recovery:**
+- Discard cursor and restart search from beginning
+- Refresh mailbox list before operations
+- Handle gracefully in pagination loops
+
+### Internal Error
+
+**Code:** `internal`  
+**MCP Type:** `internal_error`  
+**Retryable:** Sometimes
+
+Unexpected server error or external dependency failure.
+
+<Accordion title="Common causes" icon="list">
+  - IMAP server error responses
+  - TLS handshake failure
+  - Message parsing failure
+  - Unexpected IMAP protocol behavior
+</Accordion>
+
+```json Example: Internal error
+{
+  "error": {
+    "code": -32603,
+    "message": "internal error: IMAP server returned unexpected response",
+    "data": {
+      "code": "internal"
+    }
+  }
+}
+```
+
+**Recovery:**
+- Retry with exponential backoff
+- Check IMAP server status
+- Report persistent errors to maintainers
+
+## Tool-Level Issues
+
+Some tools return successful responses with an `issues` array instead of throwing errors. This allows partial success scenarios.
+
+### Issue Structure
+
+Each issue includes:
+- `code` - Error code (matches error categories)
+- `stage` - Operation stage where error occurred
+- `message` - Human-readable description
+- `retryable` - Whether operation can be retried
+- `uid` - Message UID (when applicable)
+- `message_id` - Message identifier (when applicable)
+
+```json Example: Partial search failure
+{
+  "summary": "15 message(s) returned",
+  "data": {
+    "status": "partial",
+    "issues": [
+      {
+        "code": "timeout",
+        "stage": "fetch_envelope",
+        "message": "operation timed out: fetch timeout",
+        "retryable": true,
+        "uid": 12345,
+        "message_id": "imap:default:INBOX:1234:12345"
+      }
+    ],
+    "total": 20,
+    "attempted": 20,
+    "returned": 15,
+    "failed": 5,
+    "messages": [...]
+  }
+}
+```
+
+### Status Values
+
+Tools return a `status` field indicating operation outcome:
+
+- `ok` - Fully successful, no issues
+- `partial` - Partially successful, some issues encountered
+- `failed` - Failed completely, check `issues` array
+
+<CodeGroup>
+```json Full success
+{
+  "status": "ok",
+  "issues": [],
+  "returned": 25,
+  "failed": 0
+}
+```
+
+```json Partial success
+{
+  "status": "partial",
+  "issues": [
+    {
+      "code": "timeout",
+      "stage": "fetch_envelope",
+      "message": "operation timed out",
+      "retryable": true,
+      "uid": 789
+    }
+  ],
+  "returned": 22,
+  "failed": 3
+}
+```
+
+```json Complete failure
+{
+  "status": "failed",
+  "issues": [
+    {
+      "code": "auth_failed",
+      "stage": "connect_authenticated",
+      "message": "authentication failed: [AUTHENTICATIONFAILED]",
+      "retryable": false
+    }
+  ],
+  "returned": 0,
+  "failed": 0
+}
+```
+</CodeGroup>
+
+## Recovery Patterns
+
+### Exponential Backoff for Retryable Errors
+
+<Steps>
+  <Step title="Identify retryable error">
+    Check if error code is `timeout` or `internal`:
+
+    ```typescript
+    const isRetryable = ['timeout', 'internal'].includes(error.code);
+    ```
+  </Step>
+
+  <Step title="Implement backoff">
+    Use exponential backoff with jitter:
+
+    ```typescript
+    async function retryWithBackoff(operation, maxRetries = 3) {
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          return await operation();
+        } catch (error) {
+          if (!isRetryable(error) || attempt === maxRetries - 1) {
+            throw error;
+          }
+          const backoff = Math.min(1000 * Math.pow(2, attempt), 10000);
+          const jitter = Math.random() * 1000;
+          await sleep(backoff + jitter);
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Retry operation">
+    ```typescript
+    const result = await retryWithBackoff(() => 
+      searchMessages({ account_id: 'default', mailbox: 'INBOX' })
+    );
+    ```
+  </Step>
+</Steps>
+
+### Handling Cursor Expiration
+
+<Steps>
+  <Step title="Detect cursor error">
+    ```typescript
+    if (error.code === 'invalid_input' && 
+        error.message.includes('cursor is invalid or expired')) {
+      // Restart search
+    }
+    ```
+  </Step>
+
+  <Step title="Restart without cursor">
+    ```typescript
+    // Remove cursor from request
+    const freshSearch = { ...searchParams };
+    delete freshSearch.cursor;
+    const result = await searchMessages(freshSearch);
+    ```
+  </Step>
+</Steps>
+
+### Handling Mailbox Conflicts
+
+<Steps>
+  <Step title="Detect conflict">
+    ```typescript
+    if (error.code === 'conflict' && 
+        error.message.includes('mailbox snapshot changed')) {
+      // Mailbox UIDVALIDITY changed
+    }
+    ```
+  </Step>
+
+  <Step title="Restart search">
+    ```typescript
+    // Discard all cursors and restart
+    const result = await searchMessages({
+      account_id: params.account_id,
+      mailbox: params.mailbox,
+      // ... original filters
+    });
+    ```
+  </Step>
+</Steps>
+
+### Processing Partial Successes
+
+<Steps>
+  <Step title="Check status field">
+    ```typescript
+    if (result.data.status === 'partial') {
+      console.warn('Some messages failed to fetch:', result.data.issues);
+    }
+    ```
+  </Step>
+
+  <Step title="Process successful messages">
+    ```typescript
+    // Use successfully fetched messages
+    result.data.messages.forEach(message => {
+      processMessage(message);
+    });
+    ```
+  </Step>
+
+  <Step title="Optionally retry failed items">
+    ```typescript
+    // Retry individual failed messages
+    const failedUids = result.data.issues
+      .filter(issue => issue.retryable && issue.uid)
+      .map(issue => issue.uid);
+    
+    for (const uid of failedUids) {
+      // Construct message_id and retry fetch
+    }
+    ```
+  </Step>
+</Steps>
+
+## Error Response Examples
+
+### Connection Errors
+
+<AccordionGroup>
+  <Accordion title="TCP connect timeout">
+    ```json
+    {
+      "error": {
+        "code": -32603,
+        "message": "operation timed out: tcp connect timeout",
+        "data": { "code": "timeout" }
+      }
+    }
+    ```
+
+    **Solution:** Increase `MAIL_IMAP_CONNECT_TIMEOUT_MS` or check network connectivity.
+  </Accordion>
+
+  <Accordion title="TLS handshake failed">
+    ```json
+    {
+      "error": {
+        "code": -32603,
+        "message": "internal error: TLS handshake failed: invalid certificate",
+        "data": { "code": "internal" }
+      }
+    }
+    ```
+
+    **Solution:** Verify server hostname and certificate validity.
+  </Accordion>
+</AccordionGroup>
+
+### Validation Errors
+
+<AccordionGroup>
+  <Accordion title="Write operations disabled">
+    ```json
+    {
+      "error": {
+        "code": -32602,
+        "message": "invalid input: write tools are disabled; set MAIL_IMAP_WRITE_ENABLED=true",
+        "data": { "code": "invalid_input" }
+      }
+    }
+    ```
+
+    **Solution:** Set `MAIL_IMAP_WRITE_ENABLED=true` in environment.
+  </Accordion>
+
+  <Accordion title="Delete confirmation missing">
+    ```json
+    {
+      "error": {
+        "code": -32602,
+        "message": "invalid input: delete requires explicit confirm=true",
+        "data": { "code": "invalid_input" }
+      }
+    }
+    ```
+
+    **Solution:** Include `"confirm": true` in delete request.
+  </Accordion>
+
+  <Accordion title="Invalid message ID format">
+    ```json
+    {
+      "error": {
+        "code": -32602,
+        "message": "invalid input: message_id must start with 'imap:'",
+        "data": { "code": "invalid_input" }
+      }
+    }
+    ```
+
+    **Solution:** Use message IDs from search/fetch responses in format `imap:{account}:{mailbox}:{uidvalidity}:{uid}`.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<Tip>
+  **Check error codes, not messages** - Error messages may change; use the `code` field for programmatic handling.
+</Tip>
+
+<Tip>
+  **Respect retryable flags** - Don't retry non-retryable errors like `invalid_input` or `auth_failed`.
+</Tip>
+
+<Tip>
+  **Handle partial successes** - Process available data even when `status` is `partial`.
+</Tip>
+
+<Tip>
+  **Log issues for debugging** - The `issues` array provides detailed context for troubleshooting.
+</Tip>
+
+<Warning>
+  **Never log passwords** - The server never returns passwords in errors, but don't log full environment configurations.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-Account Setup" icon="users" href="/guides/multi-account">
+    Configure multiple IMAP accounts
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    View complete tool documentation
+  </Card>
+</CardGroup>

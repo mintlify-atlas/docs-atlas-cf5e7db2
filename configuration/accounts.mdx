@@ -1,0 +1,193 @@
+---
+title: Account Configuration
+description: Configure IMAP accounts using environment variables
+---
+
+## Overview
+
+The Mail IMAP MCP Server discovers accounts by scanning environment variables following the pattern `MAIL_IMAP_<ACCOUNT>_HOST`. Each account requires host, user, and password credentials.
+
+## Single Account Setup
+
+For a single account, use the `DEFAULT` account identifier:
+
+```bash
+MAIL_IMAP_DEFAULT_HOST=imap.gmail.com
+MAIL_IMAP_DEFAULT_USER=user@gmail.com
+MAIL_IMAP_DEFAULT_PASS=app-password
+```
+
+The `DEFAULT` account is normalized to `default` as the account ID in tool calls.
+
+## Multiple Accounts
+
+Configure multiple IMAP accounts with unique identifiers:
+
+```bash
+# Personal Gmail account
+MAIL_IMAP_DEFAULT_HOST=imap.gmail.com
+MAIL_IMAP_DEFAULT_USER=user@gmail.com
+MAIL_IMAP_DEFAULT_PASS=app-password-1
+
+# Work Outlook account
+MAIL_IMAP_WORK_HOST=outlook.office365.com
+MAIL_IMAP_WORK_USER=user@company.com
+MAIL_IMAP_WORK_PASS=app-password-2
+
+# Personal Fastmail account
+MAIL_IMAP_PERSONAL_HOST=imap.fastmail.com
+MAIL_IMAP_PERSONAL_USER=user@fastmail.com
+MAIL_IMAP_PERSONAL_PASS=app-password-3
+```
+
+## Required Variables
+
+These environment variables are **required** for each account:
+
+<ParamField path="MAIL_IMAP_<ACCOUNT>_HOST" type="string" required>
+  IMAP server hostname (e.g., `imap.gmail.com`, `outlook.office365.com`)
+</ParamField>
+
+<ParamField path="MAIL_IMAP_<ACCOUNT>_USER" type="string" required>
+  Username for authentication (typically the email address)
+</ParamField>
+
+<ParamField path="MAIL_IMAP_<ACCOUNT>_PASS" type="string" required>
+  Password for authentication
+  
+  <Warning>
+  Use app-specific passwords instead of account passwords when available. Passwords are stored using `SecretString` and never logged or returned in responses.
+  </Warning>
+</ParamField>
+
+## Optional Variables
+
+These environment variables are **optional** with sensible defaults:
+
+<ParamField path="MAIL_IMAP_<ACCOUNT>_PORT" type="number" default="993">
+  IMAP server port. Standard IMAPS port is 993 for implicit TLS.
+</ParamField>
+
+<ParamField path="MAIL_IMAP_<ACCOUNT>_SECURE" type="boolean" default="true">
+  Whether to use TLS encryption. Currently enforced to `true`.
+  
+  <Note>
+  Only implicit TLS (IMAPS) on port 993 is supported. STARTTLS is not supported.
+  </Note>
+</ParamField>
+
+## Account ID Rules
+
+- **Pattern**: `^[A-Z0-9_]+$` in environment variables (uppercase)
+- **Normalized**: Converted to lowercase for use in tool calls (except `DEFAULT` becomes `default`)
+- **Length**: 1-64 characters
+- **Must be unique** across all configured accounts
+
+### Examples
+
+| Environment Variable Segment | Normalized Account ID |
+|------------------------------|----------------------|
+| `DEFAULT`                    | `default`            |
+| `WORK`                       | `work`               |
+| `PERSONAL`                   | `personal`           |
+| `BACKUP`                     | `backup`             |
+| `ARCHIVE_2024`              | `archive_2024`       |
+
+## Account Discovery
+
+The server automatically discovers accounts by scanning for `MAIL_IMAP_*_HOST` variables at startup:
+
+1. Scans all environment variables
+2. Finds patterns matching `MAIL_IMAP_<SEGMENT>_HOST`
+3. Extracts the `<SEGMENT>` as the account identifier
+4. Loads corresponding `USER`, `PASS`, `PORT`, and `SECURE` variables
+
+If no accounts are discovered, the server falls back to requiring a `DEFAULT` account.
+
+## Common Providers
+
+### Gmail
+
+```bash
+MAIL_IMAP_DEFAULT_HOST=imap.gmail.com
+MAIL_IMAP_DEFAULT_PORT=993
+MAIL_IMAP_DEFAULT_USER=your.email@gmail.com
+MAIL_IMAP_DEFAULT_PASS=your-app-password
+```
+
+<Note>
+Gmail requires [app-specific passwords](https://support.google.com/accounts/answer/185833) when 2FA is enabled.
+</Note>
+
+### Outlook / Office 365
+
+```bash
+MAIL_IMAP_WORK_HOST=outlook.office365.com
+MAIL_IMAP_WORK_PORT=993
+MAIL_IMAP_WORK_USER=your.email@company.com
+MAIL_IMAP_WORK_PASS=your-password
+```
+
+### Fastmail
+
+```bash
+MAIL_IMAP_PERSONAL_HOST=imap.fastmail.com
+MAIL_IMAP_PERSONAL_PORT=993
+MAIL_IMAP_PERSONAL_USER=your.email@fastmail.com
+MAIL_IMAP_PERSONAL_PASS=your-app-password
+```
+
+### iCloud
+
+```bash
+MAIL_IMAP_ICLOUD_HOST=imap.mail.me.com
+MAIL_IMAP_ICLOUD_PORT=993
+MAIL_IMAP_ICLOUD_USER=your.email@icloud.com
+MAIL_IMAP_ICLOUD_PASS=your-app-password
+```
+
+<Note>
+iCloud requires [app-specific passwords](https://support.apple.com/en-us/HT204397) when 2FA is enabled.
+</Note>
+
+## Security Best Practices
+
+<Warning>
+**Never commit `.env` files to version control.** Add `.env` to your `.gitignore` file.
+</Warning>
+
+1. **Use app-specific passwords** instead of account passwords when available
+2. **Enable 2FA** on your email accounts
+3. **Secure .env files** with restrictive permissions: `chmod 600 .env`
+4. **Use credential managers** for production deployments
+5. **Rotate credentials** periodically
+
+## Troubleshooting
+
+### Account Not Found
+
+```
+Error: invalid input: account "unknown" not configured
+```
+
+**Resolution**: Verify the account ID exists in environment variables and matches case-sensitivity in tool calls.
+
+### Missing Required Variables
+
+```
+Error: missing required environment variable: MAIL_IMAP_DEFAULT_HOST
+```
+
+**Resolution**: Set all required variables (`HOST`, `USER`, `PASS`) for the account.
+
+### Authentication Failed
+
+```
+Error: authentication failed: [AUTHENTICATIONFAILED] Authentication failed.
+```
+
+**Resolution**:
+1. Verify `USER` and `PASS` are correct
+2. Use app-specific password for Gmail/Outlook/iCloud
+3. Check that the account allows IMAP access
+4. Ensure account is not locked or requiring 2FA challenge

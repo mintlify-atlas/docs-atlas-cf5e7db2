@@ -1,0 +1,428 @@
+---
+title: Security Best Practices
+description: Recommended security practices and guidelines for production deployments
+---
+
+Follow these security best practices to ensure safe and secure operation of the Mail IMAP MCP Server in production environments.
+
+## For End Users
+
+### Use App-Specific Passwords
+
+Always use app-specific passwords instead of your primary account password.
+
+#### Gmail
+
+1. Enable 2-factor authentication on your Google account
+2. Visit [Google App Passwords](https://myaccount.google.com/apppasswords)
+3. Generate a new app password for "Mail"
+4. Use this 16-character password in your `.env` file
+
+```bash .env
+MAIL_IMAP_DEFAULT_PASS=abcd-efgh-ijkl-mnop
+```
+
+#### Microsoft 365 / Outlook
+
+1. Enable 2-factor authentication on your Microsoft account
+2. Visit [Microsoft Account Security](https://account.microsoft.com/security)
+3. Create an app password under "App passwords"
+4. Use this password in your configuration
+
+#### Other Providers
+
+Consult your email provider's documentation for app password support. Most modern providers support this feature when 2FA is enabled.
+
+<Warning>
+**Never use your primary account password.** If the MCP server or its configuration is compromised, an app-specific password can be revoked without changing your main password or affecting other services.
+</Warning>
+
+### Enable Two-Factor Authentication
+
+Always enable 2FA on your email accounts before generating app passwords:
+
+- **Prevents unauthorized access**: Even if your app password is compromised, attackers cannot access your account without the second factor
+- **Required for app passwords**: Most providers require 2FA to generate app passwords
+- **Audit trail**: 2FA provides login notifications for suspicious activity
+
+### Review Access Logs Regularly
+
+Periodically review your email account's access logs for suspicious activity:
+
+- **Gmail**: Visit [Recent Security Activity](https://myaccount.google.com/notifications)
+- **Outlook**: Check [Recent Activity](https://account.microsoft.com/activity)
+- Look for unfamiliar IP addresses or locations
+- Revoke app passwords that are no longer in use
+
+### Restrict Write Access
+
+Keep write operations disabled unless absolutely necessary (source/docs/security.md:50-67):
+
+```bash .env
+# Default (recommended for read-only access)
+MAIL_IMAP_WRITE_ENABLED=false
+
+# Only enable when needed
+MAIL_IMAP_WRITE_ENABLED=true
+```
+
+**When to enable writes**:
+- ✅ You need to mark messages as read/unread
+- ✅ You need to organize messages into folders
+- ✅ You need to delete or archive messages
+
+**When to keep disabled**:
+- ✅ Read-only monitoring or search
+- ✅ Message analysis or reporting
+- ✅ Testing and development
+
+### Secure Environment Files
+
+Protect your `.env` files with restrictive permissions:
+
+```bash
+# Set read/write for owner only
+chmod 600 .env
+
+# Verify permissions
+ls -la .env
+# Should show: -rw------- 1 user user ...
+```
+
+<Warning>
+**Critical**: Never commit `.env` files to version control. Always add to `.gitignore`:
+
+```bash .gitignore
+.env
+.env.*
+*.env
+```
+</Warning>
+
+### Rotate Credentials Periodically
+
+Regularly rotate your app passwords to minimize exposure:
+
+1. Generate a new app password from your email provider
+2. Update your `.env` file with the new password
+3. Restart the MCP server
+4. Revoke the old app password from your account settings
+
+**Recommended rotation schedule**:
+- Every 90 days for production environments
+- Immediately if you suspect compromise
+- After team member departures
+
+## For Operators
+
+### Principle of Least Privilege
+
+Run the server with minimal required permissions:
+
+```bash
+# Create dedicated user
+sudo useradd -r -s /bin/false mcp-server
+
+# Run as dedicated user
+sudo -u mcp-server npx @bradsjm/mail-imap-mcp-rs
+```
+
+**Operating system recommendations**:
+- Use dedicated service accounts
+- Avoid running as root or administrator
+- Limit file system access to configuration directory only
+- Use systemd service hardening on Linux
+
+### Network Isolation
+
+Deploy the server in isolated network segments where possible:
+
+#### Firewall Configuration
+
+```bash
+# Allow only IMAPS (993) outbound
+sudo ufw allow out 993/tcp comment 'IMAPS'
+
+# Deny other outbound mail ports
+sudo ufw deny out 143/tcp comment 'IMAP'
+sudo ufw deny out 25/tcp comment 'SMTP'
+```
+
+#### Docker Network Isolation
+
+```yaml docker-compose.yml
+services:
+  mcp-server:
+    image: ghcr.io/bradsjm/mail-imap-mcp-rs:latest
+    networks:
+      - isolated
+    env_file:
+      - .env
+
+networks:
+  isolated:
+    driver: bridge
+    internal: false  # Allow external connections to IMAP only
+```
+
+### Regular Updates
+
+Keep dependencies and the server updated to patch security vulnerabilities:
+
+```bash
+# Check for updates
+npm outdated -g @bradsjm/mail-imap-mcp-rs
+
+# Update to latest
+npm update -g @bradsjm/mail-imap-mcp-rs
+
+# Or specify version
+npm install -g @bradsjm/mail-imap-mcp-rs@latest
+```
+
+**Update schedule**:
+- Monitor GitHub releases for security patches
+- Subscribe to repository notifications
+- Test updates in staging before production
+- Maintain update runbook for incident response
+
+### Monitor Server Logs
+
+Implement log monitoring for unusual patterns or errors:
+
+#### Centralized Logging
+
+```bash
+# Forward logs to syslog
+MAIL_IMAP_MCP_RS_LOG=info npx @bradsjm/mail-imap-mcp-rs 2>&1 | logger -t mcp-server
+
+# Or use structured logging
+MAIL_IMAP_MCP_RS_LOG=json npx @bradsjm/mail-imap-mcp-rs > /var/log/mcp-server.json
+```
+
+#### Alert on Anomalies
+
+Monitor for:
+- Authentication failures (source/src/imap.rs:112-120)
+- Repeated timeout errors
+- Unexpected write operation attempts when disabled
+- High-frequency requests indicating abuse
+
+### Rate Limiting
+
+Consider implementing additional rate limiting at the infrastructure layer:
+
+```nginx nginx.conf
+limit_req_zone $binary_remote_addr zone=mcp:10m rate=10r/s;
+
+server {
+    location / {
+        limit_req zone=mcp burst=20;
+        proxy_pass http://localhost:3000;
+    }
+}
+```
+
+**Rate limit recommendations**:
+- 10 requests/second per client for interactive use
+- 1 request/second for automated batch processing
+- Lower limits for write operations
+
+### Backup and Disaster Recovery
+
+While the MCP server doesn't store data, maintain backups of configuration:
+
+```bash
+# Backup configuration (excluding secrets)
+tar czf mcp-config-backup.tar.gz \
+    --exclude='.env' \
+    --exclude='*.key' \
+    config/
+
+# Backup secrets separately (encrypted)
+tar czf secrets.tar.gz .env
+gpg --encrypt --recipient admin@example.com secrets.tar.gz
+rm secrets.tar.gz
+```
+
+## For Development
+
+### Security Review
+
+Changes to security-sensitive code should be reviewed:
+
+**Security-sensitive areas** (source/AGENTS.md:204-207):
+- Password handling (source/src/config.rs)
+- TLS configuration (source/src/imap.rs:81-93)
+- Input validation (source/src/server.rs:2010-2191)
+- HTML sanitization (source/src/mime.rs:133)
+- Write operation gating (source/src/server.rs:2233-2237)
+
+### Dependency Auditing
+
+Regularly audit dependencies for known vulnerabilities:
+
+```bash
+# Run cargo audit
+cargo install cargo-audit
+cargo audit
+
+# Update vulnerable dependencies
+cargo update
+```
+
+**Audit schedule**:
+- Before every release
+- Weekly in active development
+- Immediately when advisories are published
+
+### Test Input Validation
+
+Thoroughly test input validation and output bounding (source/AGENTS.md:205):
+
+```rust
+#[test]
+fn validate_rejects_control_characters() {
+    let err = validate_search_text("hello\nworld")
+        .expect_err("must reject control chars");
+    assert!(err.to_string().contains("control"));
+}
+```
+
+**Test coverage requirements**:
+- All validation functions have negative tests
+- Boundary conditions are tested (min, max, just over max)
+- IMAP injection attempts are rejected
+- HTML sanitization removes dangerous content
+
+### Never Hardcode Secrets
+
+Never hardcode credentials in code or tests:
+
+```rust
+// ❌ BAD: Hardcoded password
+let pass = SecretString::new("password123".into());
+
+// ✅ GOOD: From environment or test fixtures
+let pass = SecretString::new(
+    env::var("TEST_PASSWORD")
+        .unwrap_or_else(|_| "test".to_owned())
+        .into()
+);
+```
+
+**Test data guidelines**:
+- Use environment variables for test credentials
+- Generate random data for test messages
+- Clean up test data after runs
+- Document required test environment setup
+
+### Secure CI/CD Pipelines
+
+Protect secrets in continuous integration:
+
+```yaml .github/workflows/test.yml
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run tests
+        env:
+          TEST_IMAP_HOST: ${{ secrets.TEST_IMAP_HOST }}
+          TEST_IMAP_PASS: ${{ secrets.TEST_IMAP_PASS }}
+        run: cargo test
+```
+
+**CI/CD best practices**:
+- Use GitHub Secrets or equivalent for credentials
+- Never log environment variables in CI
+- Rotate test credentials regularly
+- Use isolated test accounts, not production
+
+## Compliance Considerations
+
+### Data Privacy
+
+When deploying in regulated environments:
+
+- **GDPR**: Ensure email data processing has legal basis and user consent
+- **HIPAA**: Do not use for healthcare email without proper safeguards
+- **SOC 2**: Implement access logging and audit trails
+- **ISO 27001**: Follow information security management practices
+
+### Data Retention
+
+The MCP server does not store email data persistently:
+
+- Messages are fetched on-demand
+- Search cursors expire after configured TTL (default: 10 minutes)
+- No local caching of message content
+- Credentials are in memory only (source/docs/security.md:214)
+
+<Info>
+For data retention compliance, configure your email provider's retention policies, not the MCP server.
+</Info>
+
+### Encryption Requirements
+
+If your compliance framework requires encryption at rest:
+
+- Use full-disk encryption on the host system
+- Store `.env` files on encrypted volumes
+- Consider hardware security modules (HSM) for key storage
+- Document encryption mechanisms in security policies
+
+## Incident Response
+
+### Suspected Credential Compromise
+
+If you suspect credentials have been compromised:
+
+1. **Immediately revoke** the app password from your email provider
+2. **Generate** a new app password
+3. **Update** the `.env` file and restart the server
+4. **Review** email account access logs for unauthorized activity
+5. **Check** for unexpected messages sent or deleted
+6. **Enable** additional security features (2FA if not already enabled)
+
+### Security Vulnerability Discovery
+
+If you discover a security vulnerability:
+
+1. **Do not** disclose publicly until patch is available
+2. **Report** to the repository maintainers via GitHub Security Advisories
+3. **Provide** detailed reproduction steps and impact assessment
+4. **Allow** reasonable time for patch development (typically 90 days)
+
+### Unauthorized Access Detection
+
+If logs show unauthorized access attempts:
+
+1. **Enable** stricter rate limiting
+2. **Block** suspicious IP addresses at firewall level
+3. **Rotate** credentials as a precaution
+4. **Review** server configuration for misconfigurations
+5. **Update** to latest version with security patches
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Security Features" icon="shield-halved" href="/security/overview">
+    Learn about built-in security protections
+  </Card>
+  <Card title="Configuration Reference" icon="gear" href="/configuration/environment-variables">
+    Review all configuration options
+  </Card>
+  <Card title="OWASP Top 10" icon="arrow-up-right-from-square" href="https://owasp.org/www-project-top-ten/">
+    Industry-standard security risks and mitigations
+  </Card>
+  <Card title="CIS Benchmarks" icon="arrow-up-right-from-square" href="https://www.cisecurity.org/cis-benchmarks">
+    Security configuration best practices
+  </Card>
+</CardGroup>

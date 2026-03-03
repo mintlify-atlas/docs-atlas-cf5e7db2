@@ -1,0 +1,538 @@
+---
+title: Tool Response Envelope
+description: Standard response structure for all MCP tool calls
+---
+
+All tools in the Mail IMAP MCP Server return responses wrapped in a standardized envelope structure. This provides consistent metadata, error handling, and success responses across the entire API.
+
+## Response Structure
+
+Every successful tool call returns a `ToolEnvelope` with three top-level fields:
+
+```json
+{
+  "summary": "human-readable one-line outcome",
+  "data": {
+    // Tool-specific payload
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 245
+  }
+}
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `summary` | string | Human-readable one-line description of the operation outcome |
+| `data` | object | Tool-specific data payload (shape varies by tool) |
+| `meta` | object | Execution metadata (timestamp and duration) |
+
+## Implementation
+
+The envelope structure is defined in `src/models.rs:44`:
+
+```rust
+/// Standard response envelope for all tools
+///
+/// Wraps tool-specific data with human-readable summary and execution metadata.
+/// This structure provides consistent response shape across all MCP tools.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ToolEnvelope<T>
+where
+    T: JsonSchema,
+{
+    /// Human-readable summary of the operation outcome
+    pub summary: String,
+    /// Tool-specific data payload
+    pub data: T,
+    /// Execution metadata (timestamp, duration)
+    pub meta: Meta,
+}
+```
+
+### Metadata Structure
+
+The `meta` field is consistent across all tools:
+
+```rust
+/// Metadata included in all tool responses
+///
+/// Provides timing information and current UTC timestamp.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Meta {
+    /// Current UTC timestamp in RFC 3339 format with milliseconds
+    pub now_utc: String,
+    /// Tool execution duration in milliseconds
+    pub duration_ms: u64,
+}
+```
+
+From `src/models.rs:10`:
+
+```rust
+impl Meta {
+    /// Create metadata populated with current time and elapsed duration
+    pub fn now(duration_ms: u64) -> Self {
+        Self {
+            now_utc: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            duration_ms,
+        }
+    }
+}
+```
+
+## Success Response Examples
+
+### List Accounts
+
+```json
+{
+  "summary": "2 account(s) configured",
+  "data": {
+    "accounts": [
+      {
+        "account_id": "default",
+        "host": "imap.gmail.com",
+        "port": 993,
+        "secure": true
+      },
+      {
+        "account_id": "work",
+        "host": "imap.fastmail.com",
+        "port": 993,
+        "secure": true
+      }
+    ],
+    "next_action": {
+      "instruction": "List mailboxes for account",
+      "tool": "imap_list_mailboxes",
+      "arguments": {
+        "account_id": "default"
+      }
+    }
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 12
+  }
+}
+```
+
+### Search Messages
+
+```json
+{
+  "summary": "10 message(s) returned",
+  "data": {
+    "account_id": "default",
+    "mailbox": "INBOX",
+    "total": 150,
+    "attempted": 10,
+    "returned": 10,
+    "failed": 0,
+    "messages": [
+      {
+        "message_id": "imap:default:INBOX:12345:42",
+        "message_uri": "imap://default/mailbox/INBOX/message/12345/42",
+        "message_raw_uri": "imap://default/mailbox/INBOX/message/12345/42/raw",
+        "mailbox": "INBOX",
+        "uidvalidity": 12345,
+        "uid": 42,
+        "date": "2024-02-26T10:30:00Z",
+        "from": "sender@example.com",
+        "subject": "Project update",
+        "flags": ["\\Seen"]
+      }
+      // ... up to 'limit' messages
+    ],
+    "next_cursor": "550e8400-e29b-41d4-a716-446655440000",
+    "has_more": true
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 245
+  }
+}
+```
+
+### Get Message
+
+```json
+{
+  "summary": "Message retrieved",
+  "data": {
+    "account_id": "default",
+    "message": {
+      "message_id": "imap:default:INBOX:12345:42",
+      "message_uri": "imap://default/mailbox/INBOX/message/12345/42",
+      "message_raw_uri": "imap://default/mailbox/INBOX/message/12345/42/raw",
+      "mailbox": "INBOX",
+      "uidvalidity": 12345,
+      "uid": 42,
+      "date": "2024-02-26T10:30:00Z",
+      "from": "sender@example.com",
+      "to": "recipient@example.com",
+      "subject": "Project update",
+      "flags": ["\\Seen"],
+      "headers": {
+        "Date": "Mon, 26 Feb 2024 10:30:00 +0000",
+        "From": "sender@example.com",
+        "To": "recipient@example.com",
+        "Subject": "Project update"
+      },
+      "body_text": "Hello, here's the project update...",
+      "attachments": [
+        {
+          "filename": "report.pdf",
+          "content_type": "application/pdf",
+          "size_bytes": 102400,
+          "part_id": "2"
+        }
+      ]
+    }
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 89
+  }
+}
+```
+
+## Error Response Structure
+
+Error responses use a different shape that conforms to the MCP `ErrorData` specification. They do **not** include the `summary` or `data` fields.
+
+```json
+{
+  "error": {
+    "code": "invalid_input|auth_failed|not_found|timeout|conflict|internal",
+    "message": "actionable error message",
+    "data": {
+      "code": "specific_error_code"
+    }
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 15
+  }
+}
+```
+
+<Info>
+Note that `meta` is still included in error responses to provide timing information, but the `error` object replaces the `summary` and `data` fields.
+</Info>
+
+### Error Codes
+
+The server maps internal `AppError` types to MCP error codes:
+
+| AppError Type | MCP Error Type | Error Code | Description |
+|--------------|----------------|------------|-------------|
+| `InvalidInput` | `invalid_params` | `invalid_input` | Validation failed, malformed request |
+| `NotFound` | `resource_not_found` | `not_found` | Account, mailbox, or message not found |
+| `AuthFailed` | `invalid_request` | `auth_failed` | Bad credentials, account disabled |
+| `Timeout` | `internal_error` | `timeout` | TCP connect, TLS, or IMAP response timeout |
+| `Conflict` | `invalid_request` | `conflict` | UIDVALIDITY changed, state inconsistent |
+| `Internal` | `internal_error` | `internal` | Unexpected failure, external crate error |
+
+From `src/errors.rs:56`:
+
+```rust
+pub fn to_error_data(&self) -> ErrorData {
+    match self {
+        Self::InvalidInput(msg) => {
+            ErrorData::invalid_params(msg.clone(), Some(json!({ "code": "invalid_input" })))
+        }
+        Self::NotFound(msg) => {
+            ErrorData::resource_not_found(msg.clone(), Some(json!({ "code": "not_found" })))
+        }
+        Self::AuthFailed(msg) => {
+            ErrorData::invalid_request(msg.clone(), Some(json!({ "code": "auth_failed" })))
+        }
+        Self::Timeout(msg) => {
+            ErrorData::internal_error(msg.clone(), Some(json!({ "code": "timeout" })))
+        }
+        Self::Conflict(msg) => {
+            ErrorData::invalid_request(msg.clone(), Some(json!({ "code": "conflict" })))
+        }
+        Self::Internal(msg) => {
+            ErrorData::internal_error(msg.clone(), Some(json!({ "code": "internal" })))
+        }
+    }
+}
+```
+
+## Error Examples
+
+### Invalid Input
+
+```json
+{
+  "error": {
+    "code": -32602,
+    "message": "invalid input: message_id must start with 'imap'",
+    "data": {
+      "code": "invalid_input"
+    }
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 5
+  }
+}
+```
+
+### Not Found
+
+```json
+{
+  "error": {
+    "code": -32002,
+    "message": "not found: account 'unknown' not configured",
+    "data": {
+      "code": "not_found"
+    }
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 3
+  }
+}
+```
+
+### Authentication Failed
+
+```json
+{
+  "error": {
+    "code": -32600,
+    "message": "authentication failed: invalid credentials",
+    "data": {
+      "code": "auth_failed"
+    }
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 1250
+  }
+}
+```
+
+### Conflict (UIDVALIDITY Changed)
+
+```json
+{
+  "error": {
+    "code": -32600,
+    "message": "conflict: mailbox snapshot changed; rerun search",
+    "data": {
+      "code": "conflict"
+    }
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 78
+  }
+}
+```
+
+### Timeout
+
+```json
+{
+  "error": {
+    "code": -32603,
+    "message": "operation timed out: IMAP server did not respond within 30s",
+    "data": {
+      "code": "timeout"
+    }
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 30000
+  }
+}
+```
+
+## Partial Success Responses
+
+Some tools may encounter errors during execution but still return partial results. In these cases, the response uses the success envelope with additional `status` and `issues` fields in the `data` payload:
+
+```json
+{
+  "summary": "8 message(s) returned",
+  "data": {
+    "status": "partial",
+    "issues": [
+      {
+        "code": "fetch_failed",
+        "stage": "fetch_headers",
+        "message": "UID 42: connection reset",
+        "retryable": true,
+        "uid": 42,
+        "message_id": "imap:default:INBOX:12345:42"
+      },
+      {
+        "code": "fetch_failed",
+        "stage": "fetch_headers",
+        "message": "UID 43: timeout",
+        "retryable": true,
+        "uid": 43,
+        "message_id": "imap:default:INBOX:12345:43"
+      }
+    ],
+    "account_id": "default",
+    "mailbox": "INBOX",
+    "total": 10,
+    "attempted": 10,
+    "returned": 8,
+    "failed": 2,
+    "messages": [
+      // ... 8 successfully fetched messages
+    ],
+    "has_more": false
+  },
+  "meta": {
+    "now_utc": "2024-02-26T10:30:45.123Z",
+    "duration_ms": 1520
+  }
+}
+```
+
+### Status Values
+
+| Status | Description |
+|--------|-------------|
+| `ok` | All operations succeeded |
+| `partial` | Some operations failed, but partial results available |
+| `failed` | Operation completely failed (usually returned as hard error instead) |
+
+### Issue Structure
+
+```typescript
+interface Issue {
+  code: string;           // Error code (e.g., "fetch_failed", "parse_error")
+  stage: string;          // Operation stage (e.g., "fetch_headers", "parse_body")
+  message: string;        // Human-readable error description
+  retryable: boolean;     // Whether the operation can be retried
+  uid?: number;           // IMAP UID if applicable
+  message_id?: string;    // Message ID if applicable
+}
+```
+
+<Note>
+Partial success responses allow LLMs to work with available data even when some operations fail. The `issues` array provides detailed diagnostics for troubleshooting.
+</Note>
+
+## Response Generation
+
+All tool handlers use a standardized `finalize_tool` function to generate the envelope (from `src/server.rs:1783`):
+
+```rust
+fn finalize_tool<T>(
+    started: Instant,
+    tool: &str,
+    result: AppResult<(String, T)>,
+) -> Result<Json<ToolEnvelope<T>>, ErrorData>
+where
+    T: schemars::JsonSchema,
+{
+    match result {
+        Ok((summary, data)) => Ok(Json(ToolEnvelope {
+            summary,
+            data,
+            meta: Meta::now(duration_ms(started)),
+        })),
+        Err(e) => {
+            error!(
+                tool,
+                code = app_error_code(&e),
+                message = %e,
+                "hard mcp error"
+            );
+            Err(e.to_error_data())
+        }
+    }
+}
+```
+
+This ensures:
+- Consistent envelope structure across all tools
+- Automatic timing metadata generation
+- Proper error logging
+- Standardized error response format
+
+## Best Practices
+
+### 1. Always Check the Summary
+
+The `summary` field provides a quick human-readable outcome:
+
+```javascript
+const response = await callTool('imap_search_messages', params);
+console.log(response.summary); // "10 message(s) returned"
+```
+
+### 2. Use Status for Partial Success
+
+When processing results, check the `status` field if present:
+
+```javascript
+if (response.data.status === 'partial') {
+  console.warn(`Some operations failed: ${response.data.issues.length} issues`);
+  // Log issues for debugging
+  response.data.issues.forEach(issue => {
+    console.warn(`${issue.stage}: ${issue.message}`);
+  });
+}
+```
+
+### 3. Monitor Performance with `duration_ms`
+
+Use the `meta.duration_ms` field to track performance:
+
+```javascript
+if (response.meta.duration_ms > 5000) {
+  console.warn(`Slow operation: ${response.meta.duration_ms}ms`);
+}
+```
+
+### 4. Parse Error Codes, Not Messages
+
+Error messages may change, but error codes are stable:
+
+```javascript
+try {
+  const response = await callTool('imap_get_message', params);
+} catch (error) {
+  // Good: Check error code
+  if (error.data?.code === 'conflict') {
+    // Handle UIDVALIDITY conflict
+    return retryWithFreshSearch();
+  }
+  
+  // Bad: Parse error message
+  if (error.message.includes('snapshot changed')) {
+    // Fragile - message could change
+  }
+}
+```
+
+### 5. Handle Retryable Issues
+
+For partial success responses, retry failed operations when `retryable` is true:
+
+```javascript
+const retryableIssues = response.data.issues?.filter(issue => issue.retryable);
+if (retryableIssues?.length > 0) {
+  // Retry just the failed message IDs
+  const failedIds = retryableIssues
+    .map(issue => issue.message_id)
+    .filter(Boolean);
+  
+  await retryMessages(failedIds);
+}
+```

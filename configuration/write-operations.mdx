@@ -1,0 +1,274 @@
+---
+title: Write Operations Security Gate
+description: Understanding and configuring the write operations safety gate
+---
+
+## Overview
+
+Write operations are **disabled by default** to protect against accidental mailbox modifications. This safety gate requires explicit opt-in to enable copy, move, delete, and flag update operations.
+
+## Enabling Write Operations
+
+Set the following environment variable to enable write operations:
+
+```bash
+MAIL_IMAP_WRITE_ENABLED=true
+```
+
+<Warning>
+Only enable write operations if you need them. The server is safer with writes disabled.
+</Warning>
+
+## Affected Tools
+
+When `MAIL_IMAP_WRITE_ENABLED=false` (default), the following tools return errors:
+
+### imap_update_message_flags
+
+Add or remove IMAP flags (\Seen, \Flagged, custom flags).
+
+**Requires**: `MAIL_IMAP_WRITE_ENABLED=true`
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:12345:42",
+  "add_flags": ["\\Seen"],
+  "remove_flags": ["\\Flagged"]
+}
+```
+
+### imap_copy_message
+
+Copy message to another mailbox (IMAP `COPY` command).
+
+**Requires**: `MAIL_IMAP_WRITE_ENABLED=true`
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:12345:42",
+  "destination_mailbox": "Archive"
+}
+```
+
+### imap_move_message
+
+Move message to another mailbox (IMAP `MOVE` or `COPY` + delete).
+
+**Requires**: `MAIL_IMAP_WRITE_ENABLED=true`
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:12345:42",
+  "destination_mailbox": "Archive"
+}
+```
+
+### imap_delete_message
+
+Permanently delete a message (IMAP `STORE` + `EXPUNGE`).
+
+**Requires**: 
+- `MAIL_IMAP_WRITE_ENABLED=true`
+- **AND** explicit `confirm=true` parameter
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:12345:42",
+  "confirm": true
+}
+```
+
+<Warning>
+Delete requires **both** the write gate to be enabled **and** explicit confirmation in the request.
+</Warning>
+
+## Error Behavior
+
+When write operations are disabled, tools return the following error:
+
+```
+Error: invalid input: write tools are disabled; set MAIL_IMAP_WRITE_ENABLED=true
+```
+
+### Example Error Response
+
+```json
+{
+  "error": {
+    "code": "INVALID_INPUT",
+    "message": "write tools are disabled; set MAIL_IMAP_WRITE_ENABLED=true"
+  }
+}
+```
+
+## Read-Only Operations
+
+The following tools are **always enabled** regardless of the write gate setting:
+
+- `imap_list_mailboxes` - List all mailboxes
+- `imap_search_messages` - Search messages with filters
+- `imap_read_message` - Read message content
+- `imap_get_message_source` - Fetch raw message source
+- `imap_page_forward` - Pagination (next page)
+- `imap_page_backward` - Pagination (previous page)
+
+## Delete Confirmation Requirement
+
+The `imap_delete_message` tool has an additional safety mechanism beyond the write gate:
+
+### Two-Level Protection
+
+1. **Write gate**: `MAIL_IMAP_WRITE_ENABLED=true` must be set
+2. **Explicit confirmation**: `confirm=true` must be in the request
+
+### Without Confirmation
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:12345:42"
+  // Missing: "confirm": true
+}
+```
+
+```
+Error: invalid input: delete requires explicit confirm=true
+```
+
+### With Confirmation
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:12345:42",
+  "confirm": true
+}
+```
+
+<Note>
+The `confirm` parameter must be the literal boolean `true`, not a string or other truthy value.
+</Note>
+
+## Security Considerations
+
+### Why Disabled by Default?
+
+Write operations are disabled by default because:
+
+1. **Prevents accidental modifications** - LLMs can make mistakes
+2. **Reduces attack surface** - Read-only access is inherently safer
+3. **Explicit opt-in** - Forces conscious decision to enable writes
+4. **Audit trail** - Clear indication of write capability in configuration
+
+### When to Enable?
+
+Enable write operations when you need:
+
+- Automated email filing and organization
+- Flag management for workflow automation
+- Email cleanup and archival operations
+- Moving messages between mailboxes programmatically
+
+### When to Keep Disabled?
+
+Keep write operations disabled when:
+
+- Only reading email content for analysis
+- Searching and extracting information
+- Building read-only integrations
+- Minimizing risk of accidental changes
+
+## Best Practices
+
+<Warning>
+**Principle of Least Privilege**: Only enable write operations if absolutely necessary for your use case.
+</Warning>
+
+1. **Start read-only**: Begin with writes disabled and enable only when needed
+2. **Separate accounts**: Use different accounts for read-only vs read-write operations
+3. **Test first**: Test write operations in a non-production account first
+4. **Monitor operations**: Review write operation logs regularly
+5. **Disable when done**: Disable writes after completing batch operations
+
+## Environment-Specific Configuration
+
+### Development
+
+```bash .env.development
+# Enable writes for testing
+MAIL_IMAP_WRITE_ENABLED=true
+```
+
+### Production Read-Only
+
+```bash .env.production
+# Disable writes for safety
+MAIL_IMAP_WRITE_ENABLED=false
+```
+
+### Production with Writes
+
+```bash .env.production
+# Enable writes only when necessary
+MAIL_IMAP_WRITE_ENABLED=true
+```
+
+<Warning>
+Use separate `.env` files for different environments. Never commit `.env` files to version control.
+</Warning>
+
+## Troubleshooting
+
+### Error: write tools are disabled
+
+```
+Error: invalid input: write tools are disabled; set MAIL_IMAP_WRITE_ENABLED=true
+```
+
+**Resolution**: Set `MAIL_IMAP_WRITE_ENABLED=true` in your environment variables or `.env` file.
+
+### Delete requires explicit confirm=true
+
+```
+Error: invalid input: delete requires explicit confirm=true
+```
+
+**Resolution**: Add `"confirm": true` to your `imap_delete_message` request payload.
+
+### Write enabled but still getting errors
+
+1. Verify environment variable is set:
+   ```bash
+   echo $MAIL_IMAP_WRITE_ENABLED
+   ```
+
+2. Check boolean value is recognized (must be: `1`, `true`, `yes`, `y`, `on`)
+
+3. Restart the server after changing environment variables
+
+4. For Docker, ensure variable is passed correctly:
+   ```bash
+   docker run --rm -i -e MAIL_IMAP_WRITE_ENABLED=true mail-imap-mcp-rs
+   ```
+
+## Implementation Details
+
+The write gate is implemented in `src/server.rs` via the `require_write_enabled()` function, which is called at the beginning of each write operation tool handler:
+
+```rust
+fn require_write_enabled(config: &ServerConfig) -> AppResult<()> {
+    if !config.write_enabled {
+        Err(AppError::InvalidInput(
+            "write tools are disabled; set MAIL_IMAP_WRITE_ENABLED=true".to_owned(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+```
+
+This ensures write operations fail fast before any IMAP commands are executed.

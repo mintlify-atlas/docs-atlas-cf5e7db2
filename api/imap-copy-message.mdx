@@ -1,0 +1,322 @@
+---
+title: 'imap_copy_message'
+description: 'Copy a message to a mailbox in the same or different account'
+---
+
+## Overview
+
+Copies a message to a destination mailbox. Supports both same-account copy (using native IMAP COPY) and cross-account copy (using FETCH + APPEND). The original message remains in the source mailbox unchanged.
+
+<Warning>
+  This tool requires `MAIL_IMAP_WRITE_ENABLED=true` to be set in your environment variables. Write operations are disabled by default as a safety measure.
+</Warning>
+
+## Common use cases
+
+- Archive messages to a different folder
+- Copy messages between accounts
+- Backup important messages
+- Duplicate messages to multiple mailboxes
+- Migrate messages across IMAP servers
+
+## Input parameters
+
+<ParamField path="body.account_id" type="string" default="default">
+  Source account identifier. Must match pattern `^[A-Za-z0-9_-]{1,64}$`.
+</ParamField>
+
+<ParamField path="body.message_id" type="string" required>
+  Message identifier in format `imap:{account_id}:{mailbox}:{uidvalidity}:{uid}`.
+  
+  The account_id in the message_id must match the `account_id` parameter.
+</ParamField>
+
+<ParamField path="body.destination_mailbox" type="string" required>
+  Destination mailbox name (1-256 characters). Must not contain control characters.
+  
+  Common mailbox names:
+  - `INBOX` - Main inbox
+  - `Sent` or `Sent Items` - Sent messages
+  - `Archive` - Archived messages
+  - `Trash` or `Deleted Items` - Deleted messages
+  
+  The exact mailbox name depends on your IMAP server configuration. Use `imap_list_mailboxes` to see available mailboxes.
+</ParamField>
+
+<ParamField path="body.destination_account_id" type="string">
+  Destination account identifier. Defaults to the source `account_id` (same-account copy).
+  
+  When copying to a different account:
+  - The message is fetched from the source account
+  - The raw RFC822 message is appended to the destination account
+  - Both accounts must be configured in environment variables
+</ParamField>
+
+## Response
+
+<ResponseField name="summary" type="string">
+  Human-readable one-line outcome: `"Message copied"`
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties">
+    <ResponseField name="status" type="string">
+      Operation status: `ok`, `partial`, or `failed`
+    </ResponseField>
+    
+    <ResponseField name="issues" type="array">
+      Array of diagnostic issues encountered during execution. Each issue includes:
+      - `code` - Error category (`invalid_input`, `auth_failed`, `not_found`, `timeout`, `conflict`, `internal`)
+      - `stage` - Operation stage where issue occurred (e.g., `connect_authenticated_source`, `uid_copy`, `fetch_raw_message_source`, `append_destination`)
+      - `message` - Actionable error message
+      - `retryable` - Whether the operation can be retried
+      - `uid` - Message UID (if applicable)
+      - `message_id` - Message identifier (if applicable)
+    </ResponseField>
+    
+    <ResponseField name="source_account_id" type="string">
+      Source account identifier
+    </ResponseField>
+    
+    <ResponseField name="destination_account_id" type="string">
+      Destination account identifier
+    </ResponseField>
+    
+    <ResponseField name="source_mailbox" type="string">
+      Source mailbox name
+    </ResponseField>
+    
+    <ResponseField name="destination_mailbox" type="string">
+      Destination mailbox name
+    </ResponseField>
+    
+    <ResponseField name="message_id" type="string">
+      Original message identifier
+    </ResponseField>
+    
+    <ResponseField name="new_message_id" type="string">
+      New message identifier in the destination mailbox. Will be `null` if the server doesn't return UID mapping (common with APPEND operations).
+    </ResponseField>
+    
+    <ResponseField name="steps_attempted" type="number">
+      Number of operation steps attempted. Useful for debugging partial failures.
+    </ResponseField>
+    
+    <ResponseField name="steps_succeeded" type="number">
+      Number of operation steps that completed successfully. Compare with `steps_attempted` to identify where failures occurred.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="meta" type="object">
+  <Expandable title="properties">
+    <ResponseField name="now_utc" type="string">
+      ISO-8601 UTC timestamp when response was generated
+    </ResponseField>
+    
+    <ResponseField name="duration_ms" type="number">
+      Operation duration in milliseconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example request
+
+<RequestExample>
+
+```json Same-account copy
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:1234567890:42",
+  "destination_mailbox": "Archive"
+}
+```
+
+```json Cross-account copy
+{
+  "account_id": "personal",
+  "message_id": "imap:personal:INBOX:9876543210:123",
+  "destination_mailbox": "INBOX",
+  "destination_account_id": "work"
+}
+```
+
+```json Copy to subfolder
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:1234567890:42",
+  "destination_mailbox": "Projects/2026/Q1"
+}
+```
+
+</RequestExample>
+
+## Example response
+
+<ResponseExample>
+
+```json 200 Same-account copy success
+{
+  "summary": "Message copied",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "source_account_id": "default",
+    "destination_account_id": "default",
+    "source_mailbox": "INBOX",
+    "destination_mailbox": "Archive",
+    "message_id": "imap:default:INBOX:1234567890:42",
+    "new_message_id": null,
+    "steps_attempted": 2,
+    "steps_succeeded": 2
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 456
+  }
+}
+```
+
+```json 200 Cross-account copy success
+{
+  "summary": "Message copied",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "source_account_id": "personal",
+    "destination_account_id": "work",
+    "source_mailbox": "INBOX",
+    "destination_mailbox": "INBOX",
+    "message_id": "imap:personal:INBOX:9876543210:123",
+    "new_message_id": null,
+    "steps_attempted": 4,
+    "steps_succeeded": 4
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 1234
+  }
+}
+```
+
+```json 200 Partial failure - destination connection failed
+{
+  "summary": "Message copied",
+  "data": {
+    "status": "partial",
+    "issues": [
+      {
+        "code": "auth_failed",
+        "stage": "connect_authenticated_destination",
+        "message": "Authentication failed for destination account",
+        "retryable": false,
+        "message_id": "imap:personal:INBOX:9876543210:123"
+      }
+    ],
+    "source_account_id": "personal",
+    "destination_account_id": "work",
+    "source_mailbox": "INBOX",
+    "destination_mailbox": "INBOX",
+    "message_id": "imap:personal:INBOX:9876543210:123",
+    "new_message_id": null,
+    "steps_attempted": 4,
+    "steps_succeeded": 2
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 789
+  }
+}
+```
+
+</ResponseExample>
+
+## Error responses
+
+<ResponseExample>
+
+```json Write operations disabled
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "write tools are disabled; set MAIL_IMAP_WRITE_ENABLED=true",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 5
+  }
+}
+```
+
+```json Mailbox not found
+{
+  "error": {
+    "code": "not_found",
+    "message": "Mailbox does not exist",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 234
+  }
+}
+```
+
+```json UIDValidity mismatch
+{
+  "error": {
+    "code": "conflict",
+    "message": "message uidvalidity no longer matches mailbox",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T22:30:15.123Z",
+    "duration_ms": 123
+  }
+}
+```
+
+</ResponseExample>
+
+## Implementation notes
+
+### Same-account copy
+
+For copies within the same account, the server uses the native IMAP `UID COPY` command:
+
+1. Connect to the source account and authenticate (`steps_attempted=1`)
+2. Select the source mailbox in read-write mode and verify uidvalidity
+3. Execute `UID COPY` command (`steps_attempted=2`)
+
+### Cross-account copy
+
+For copies between different accounts, the server uses `FETCH` + `APPEND`:
+
+1. Connect to source account and authenticate (`steps_attempted=1`)
+2. Select source mailbox (read-only) and verify uidvalidity
+3. Fetch the raw RFC822 message from source (`steps_attempted=2`)
+4. Connect to destination account and authenticate (`steps_attempted=3`)
+5. Append the message to destination mailbox (`steps_attempted=4`)
+
+### Step tracking
+
+The `steps_attempted` and `steps_succeeded` fields help diagnose where failures occur:
+
+- Same-account: 2 steps total (connect + copy)
+- Cross-account: 4 steps total (connect source + fetch + connect destination + append)
+
+If `steps_succeeded < steps_attempted`, check the `issues` array to identify which stage failed.
+
+### Message ID availability
+
+- Same-account copies may not return `new_message_id` if the IMAP server doesn't support the `UIDPLUS` extension
+- Cross-account copies using `APPEND` typically don't return `new_message_id`
+- To find the copied message, search the destination mailbox using message headers or content
+
+## See also
+
+- [imap_move_message](/api/imap-move-message) - Move message to different mailbox (removes from source)
+- [imap_list_mailboxes](/api/imap-list-mailboxes) - List available mailboxes
+- [Write operations configuration](/configuration/write-operations) - Enable write operations
+- [Multi-account setup](/guides/multi-account) - Configure multiple IMAP accounts

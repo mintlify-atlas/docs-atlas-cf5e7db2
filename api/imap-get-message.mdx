@@ -1,0 +1,461 @@
+---
+title: "imap_get_message"
+description: "Retrieve parsed message details with headers, body, and attachments"
+---
+
+## Overview
+
+Fetch a complete parsed message with structured data including headers, body text/HTML, and attachment metadata. Supports bounded enrichment with configurable character limits and optional features like HTML body and PDF text extraction.
+
+## Input Parameters
+
+<ParamField path="account_id" type="string" default="default">
+  Account identifier. Must match pattern `^[A-Za-z0-9_-]{1,64}$`.
+</ParamField>
+
+<ParamField path="message_id" type="string" required>
+  Stable message identifier from search results. Format: `imap:{account_id}:{mailbox}:{uidvalidity}:{uid}`.
+  
+  **Validation:**
+  - Must start with `imap:` prefix
+  - `uidvalidity` and `uid` must be non-negative integers
+  - Parsed `account_id` must match the `account_id` parameter
+  - Mailbox name must be 1-256 characters
+</ParamField>
+
+### Body and Content Options
+
+<ParamField path="body_max_chars" type="integer" default="2000">
+  Maximum characters to return for plain text body. Range: 100-20,000. Body content is truncated if it exceeds this limit.
+</ParamField>
+
+<ParamField path="include_headers" type="boolean" default="true">
+  When `true`, includes curated headers in the response. Curated headers include common fields like From, To, Subject, Date, etc.
+</ParamField>
+
+<ParamField path="include_all_headers" type="boolean" default="false">
+  When `true`, includes all message headers (overrides the curated header list). When `false` and `include_headers=true`, returns only curated headers.
+</ParamField>
+
+<ParamField path="include_html" type="boolean" default="false">
+  When `true`, includes the sanitized HTML body in the response. HTML is sanitized using `ammonia` to remove potentially dangerous content while preserving formatting.
+  
+  Body HTML is truncated to `body_max_chars` after sanitization.
+</ParamField>
+
+### Attachment Options
+
+<ParamField path="extract_attachment_text" type="boolean" default="false">
+  When `true`, attempts to extract text from PDF attachments. Only processes attachments with `content_type: application/pdf` and size ≤ 5 MB.
+  
+  Extraction failures do not cause the entire operation to fail; they are reported in the `issues` array.
+</ParamField>
+
+<ParamField path="attachment_text_max_chars" type="integer" default="10000">
+  Maximum characters to extract from each PDF attachment. Range: 100-50,000.
+  
+  **Only valid when `extract_attachment_text=true`**. Setting this parameter without enabling extraction returns an `invalid_input` error.
+</ParamField>
+
+## Output Data
+
+<ResponseField name="status" type="string" required>
+  Operation status: `ok` (success), `partial` (some operations failed), or `failed` (operation failed).
+</ResponseField>
+
+<ResponseField name="issues" type="array" required>
+  Array of diagnostic issues encountered during the operation.
+  
+  <Expandable title="Issue Object">
+    <ResponseField name="code" type="string">
+      Error code: `invalid_input`, `auth_failed`, `not_found`, `timeout`, `conflict`, or `internal`.
+    </ResponseField>
+    
+    <ResponseField name="stage" type="string">
+      Operation stage where issue occurred (e.g., `connect_authenticated`, `fetch_raw_message`, `parse_message`, `fetch_flags`).
+    </ResponseField>
+    
+    <ResponseField name="message" type="string">
+      Human-readable error message.
+    </ResponseField>
+    
+    <ResponseField name="retryable" type="boolean">
+      Whether the operation can be retried.
+    </ResponseField>
+    
+    <ResponseField name="uid" type="integer">
+      Message UID if issue relates to a specific message.
+    </ResponseField>
+    
+    <ResponseField name="message_id" type="string">
+      Stable message identifier if issue relates to a specific message.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="account_id" type="string" required>
+  Account identifier used for this operation.
+</ResponseField>
+
+<ResponseField name="message" type="object" required>
+  Parsed message details.
+  
+  <Expandable title="Message Detail Object">
+    <ResponseField name="message_id" type="string">
+      Stable message identifier with format: `imap:{account_id}:{mailbox}:{uidvalidity}:{uid}`.
+    </ResponseField>
+    
+    <ResponseField name="message_uri" type="string">
+      URI reference to the message resource (e.g., `imap://default/mailbox/INBOX/message/123456/789`).
+    </ResponseField>
+    
+    <ResponseField name="message_raw_uri" type="string">
+      URI reference to the raw RFC822 message source.
+    </ResponseField>
+    
+    <ResponseField name="mailbox" type="string">
+      Mailbox name containing this message.
+    </ResponseField>
+    
+    <ResponseField name="uidvalidity" type="integer">
+      Mailbox UIDVALIDITY value. Used to detect mailbox changes.
+    </ResponseField>
+    
+    <ResponseField name="uid" type="integer">
+      Message UID within the mailbox.
+    </ResponseField>
+    
+    <ResponseField name="date" type="string">
+      Parsed Date header value.
+    </ResponseField>
+    
+    <ResponseField name="from" type="string">
+      Parsed From header value.
+    </ResponseField>
+    
+    <ResponseField name="to" type="string">
+      Parsed To header value.
+    </ResponseField>
+    
+    <ResponseField name="cc" type="string">
+      Parsed Cc header value.
+    </ResponseField>
+    
+    <ResponseField name="subject" type="string">
+      Parsed Subject header value.
+    </ResponseField>
+    
+    <ResponseField name="flags" type="array">
+      IMAP flags array (e.g., `["\\Seen", "\\Flagged", "\\Draft"]`). Returns `null` if flag fetch fails.
+    </ResponseField>
+    
+    <ResponseField name="headers" type="array">
+      Array of header name-value pairs. Present when `include_headers=true`. Each element is a tuple `["Header-Name", "value"]`.
+      
+      When `include_all_headers=false`, returns curated headers. When `include_all_headers=true`, returns all headers.
+    </ResponseField>
+    
+    <ResponseField name="body_text" type="string">
+      Plain text body content, truncated to `body_max_chars`. Extracted from `text/plain` MIME parts.
+    </ResponseField>
+    
+    <ResponseField name="body_html" type="string">
+      Sanitized HTML body content, truncated to `body_max_chars`. Only present when `include_html=true`.
+      
+      HTML is sanitized to remove scripts, dangerous attributes, and other unsafe content while preserving formatting tags.
+    </ResponseField>
+    
+    <ResponseField name="attachments" type="array">
+      Array of attachment metadata (up to 50 attachments).
+      
+      <Expandable title="Attachment Object">
+        <ResponseField name="filename" type="string">
+          Attachment filename from Content-Disposition or Content-Type header. May be `null` if no filename is provided.
+        </ResponseField>
+        
+        <ResponseField name="content_type" type="string">
+          MIME content type (e.g., `application/pdf`, `image/jpeg`, `application/vnd.ms-excel`).
+        </ResponseField>
+        
+        <ResponseField name="size_bytes" type="integer">
+          Attachment size in bytes.
+        </ResponseField>
+        
+        <ResponseField name="part_id" type="string">
+          MIME part identifier (e.g., `1`, `2`, `3.1`, `4.2.1`). Used to identify the attachment within the message structure.
+        </ResponseField>
+        
+        <ResponseField name="extracted_text" type="string">
+          Extracted text from PDF attachment. Only present when:
+          - `extract_attachment_text=true`
+          - `content_type` is `application/pdf`
+          - Attachment size ≤ 5 MB
+          - Text extraction succeeded
+          
+          Truncated to `attachment_text_max_chars`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## PDF Attachment Extraction
+
+PDF text extraction is subject to the following rules:
+
+- **Content Type**: Only `application/pdf` MIME types are processed
+- **Size Limit**: Maximum 5 MB per attachment
+- **Failure Handling**: Extraction failures do not fail the entire tool call; they are recorded in the `issues` array
+- **Character Limit**: Extracted text is truncated to `attachment_text_max_chars`
+
+Extraction uses PDF parsing libraries to extract plain text content from the document structure.
+
+## UIDVALIDITY Validation
+
+The server validates that the mailbox UIDVALIDITY in the `message_id` matches the current mailbox state. If the UIDVALIDITY has changed (indicating the mailbox was reset), the operation fails with a `conflict` error:
+
+```json
+{
+  "error": {
+    "code": "conflict",
+    "message": "message uidvalidity no longer matches mailbox"
+  }
+}
+```
+
+This ensures message identifiers remain valid and prevents accessing messages that no longer exist at the expected UID.
+
+## Example: Get Message with Headers
+
+**Request:**
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:123456:789",
+  "body_max_chars": 5000,
+  "include_headers": true,
+  "include_all_headers": false,
+  "include_html": false
+}
+```
+
+**Response:**
+
+```json
+{
+  "summary": "Message retrieved",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "account_id": "default",
+    "message": {
+      "message_id": "imap:default:INBOX:123456:789",
+      "message_uri": "imap://default/mailbox/INBOX/message/123456/789",
+      "message_raw_uri": "imap://default/mailbox/INBOX/message/123456/789/raw",
+      "mailbox": "INBOX",
+      "uidvalidity": 123456,
+      "uid": 789,
+      "date": "Mon, 3 Mar 2026 10:30:00 +0000",
+      "from": "Alice <alice@example.com>",
+      "to": "Bob <bob@example.com>",
+      "cc": null,
+      "subject": "Project Update: Q1 Planning",
+      "flags": ["\\Seen"],
+      "headers": [
+        ["Return-Path", "<alice@example.com>"],
+        ["Received", "from mail.example.com by smtp.example.com; Mon, 3 Mar 2026 10:30:00 +0000"],
+        ["From", "Alice <alice@example.com>"],
+        ["To", "Bob <bob@example.com>"],
+        ["Subject", "Project Update: Q1 Planning"],
+        ["Date", "Mon, 3 Mar 2026 10:30:00 +0000"],
+        ["Message-ID", "<abc123@example.com>"],
+        ["Content-Type", "text/plain; charset=UTF-8"]
+      ],
+      "body_text": "Hi Bob,\n\nHere's the Q1 planning update...\n\nBest,\nAlice",
+      "body_html": null,
+      "attachments": []
+    }
+  },
+  "meta": {
+    "now_utc": "2026-03-03T10:35:45.234Z",
+    "duration_ms": 156
+  }
+}
+```
+
+## Example: Get HTML Body
+
+**Request:**
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:123456:790",
+  "body_max_chars": 10000,
+  "include_headers": false,
+  "include_html": true
+}
+```
+
+**Response (truncated):**
+
+```json
+{
+  "summary": "Message retrieved",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "account_id": "default",
+    "message": {
+      "message_id": "imap:default:INBOX:123456:790",
+      "from": "Newsletter <news@example.com>",
+      "subject": "Weekly Digest",
+      "headers": null,
+      "body_text": "WEEKLY DIGEST\n\n1. Article Title...\n2. Another Article...",
+      "body_html": "<html><body><h1>Weekly Digest</h1><ul><li>Article Title...</li><li>Another Article...</li></ul></body></html>",
+      "attachments": []
+    }
+  },
+  "meta": {
+    "now_utc": "2026-03-03T10:36:12.890Z",
+    "duration_ms": 203
+  }
+}
+```
+
+## Example: Extract PDF Attachment Text
+
+**Request:**
+
+```json
+{
+  "account_id": "work",
+  "message_id": "imap:work:Archive:987654:321",
+  "body_max_chars": 1000,
+  "include_headers": false,
+  "extract_attachment_text": true,
+  "attachment_text_max_chars": 5000
+}
+```
+
+**Response (truncated):**
+
+```json
+{
+  "summary": "Message retrieved",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "account_id": "work",
+    "message": {
+      "message_id": "imap:work:Archive:987654:321",
+      "from": "Contracts <legal@example.com>",
+      "subject": "Q1 Service Agreement",
+      "body_text": "Please find the attached service agreement for Q1.",
+      "attachments": [
+        {
+          "filename": "service-agreement-q1.pdf",
+          "content_type": "application/pdf",
+          "size_bytes": 245678,
+          "part_id": "2",
+          "extracted_text": "SERVICE AGREEMENT\n\nThis Service Agreement (\"Agreement\") is entered into as of January 1, 2026...\n\nTerms and Conditions:\n1. Services...\n2. Payment..."
+        }
+      ]
+    }
+  },
+  "meta": {
+    "now_utc": "2026-03-03T10:38:45.567Z",
+    "duration_ms": 892
+  }
+}
+```
+
+## Example: Partial Success with Issues
+
+**Response:**
+
+```json
+{
+  "summary": "Message retrieved",
+  "data": {
+    "status": "partial",
+    "issues": [
+      {
+        "code": "internal",
+        "stage": "fetch_flags",
+        "message": "IMAP fetch flags timeout",
+        "retryable": true,
+        "uid": 789,
+        "message_id": "imap:default:INBOX:123456:789"
+      }
+    ],
+    "account_id": "default",
+    "message": {
+      "message_id": "imap:default:INBOX:123456:789",
+      "mailbox": "INBOX",
+      "from": "Alice <alice@example.com>",
+      "subject": "Test Message",
+      "flags": null,
+      "body_text": "This is a test message.",
+      "attachments": []
+    }
+  },
+  "meta": {
+    "now_utc": "2026-03-03T10:40:23.123Z",
+    "duration_ms": 30125
+  }
+}
+```
+
+## Validation Errors
+
+### Invalid message_id Format
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "message_id must start with 'imap:' prefix"
+  }
+}
+```
+
+### Account Mismatch
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "message_id account does not match account_id"
+  }
+}
+```
+
+### Attachment Parameter Without Extraction
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "attachment_text_max_chars requires extract_attachment_text=true"
+  }
+}
+```
+
+### Character Limit Out of Range
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "body_max_chars must be in range 100..20000"
+  }
+}
+```
+
+## Related Tools
+
+- [imap_search_messages](/api/imap-search-messages) - Search for messages to get message IDs
+- [imap_get_message_raw](/api/imap-get-message-raw) - Get raw RFC822 message source
+- [imap_update_message_flags](/api/imap-update-message-flags) - Update message flags

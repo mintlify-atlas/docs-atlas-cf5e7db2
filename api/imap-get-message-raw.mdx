@@ -1,0 +1,378 @@
+---
+title: "imap_get_message_raw"
+description: "Retrieve bounded RFC822 message source for diagnostics and export"
+---
+
+## Overview
+
+Fetch the raw RFC822 message source as base64-encoded bytes. Returns the complete message as it exists on the IMAP server, including all headers, body parts, and attachments. Useful for diagnostics, archival, message export, or tools requiring the complete message structure.
+
+## Input Parameters
+
+<ParamField path="account_id" type="string" default="default">
+  Account identifier. Must match pattern `^[A-Za-z0-9_-]{1,64}$`.
+</ParamField>
+
+<ParamField path="message_id" type="string" required>
+  Stable message identifier from search results. Format: `imap:{account_id}:{mailbox}:{uidvalidity}:{uid}`.
+  
+  **Validation:**
+  - Must start with `imap:` prefix
+  - `uidvalidity` and `uid` must be non-negative integers
+  - Parsed `account_id` must match the `account_id` parameter
+  - Mailbox name must be 1-256 characters
+</ParamField>
+
+<ParamField path="max_bytes" type="integer" default="200000">
+  Maximum message size in bytes to retrieve. Range: 1,024-1,000,000 (1 KB to ~1 MB).
+  
+  If the actual message size exceeds this limit, the operation fails with an `invalid_input` error instructing you to increase `max_bytes`.
+</ParamField>
+
+## Output Data
+
+<ResponseField name="status" type="string" required>
+  Operation status: `ok` (success), `partial` (some operations failed), or `failed` (operation failed).
+</ResponseField>
+
+<ResponseField name="issues" type="array" required>
+  Array of diagnostic issues encountered during the operation.
+  
+  <Expandable title="Issue Object">
+    <ResponseField name="code" type="string">
+      Error code: `invalid_input`, `auth_failed`, `not_found`, `timeout`, `conflict`, or `internal`.
+    </ResponseField>
+    
+    <ResponseField name="stage" type="string">
+      Operation stage where issue occurred (e.g., `connect_authenticated`, `fetch_raw_message`).
+    </ResponseField>
+    
+    <ResponseField name="message" type="string">
+      Human-readable error message.
+    </ResponseField>
+    
+    <ResponseField name="retryable" type="boolean">
+      Whether the operation can be retried.
+    </ResponseField>
+    
+    <ResponseField name="uid" type="integer">
+      Message UID if issue relates to a specific message.
+    </ResponseField>
+    
+    <ResponseField name="message_id" type="string">
+      Stable message identifier if issue relates to a specific message.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="account_id" type="string" required>
+  Account identifier used for this operation.
+</ResponseField>
+
+<ResponseField name="message_id" type="string" required>
+  Stable message identifier that was retrieved.
+</ResponseField>
+
+<ResponseField name="message_uri" type="string" required>
+  URI reference to the message resource (e.g., `imap://default/mailbox/INBOX/message/123456/789`).
+</ResponseField>
+
+<ResponseField name="message_raw_uri" type="string" required>
+  URI reference to the raw RFC822 message source (this resource).
+</ResponseField>
+
+<ResponseField name="size_bytes" type="integer" required>
+  Actual message size in bytes. This is the size of the raw message before base64 encoding.
+  
+  On success, this will be ≤ `max_bytes`. If the message is larger than `max_bytes`, the operation fails.
+</ResponseField>
+
+<ResponseField name="raw_source_base64" type="string" required>
+  Complete RFC822 message source encoded as base64. The base64 string can be decoded to obtain the original byte-faithful message.
+  
+  Returns `null` when `status=failed`.
+</ResponseField>
+
+<ResponseField name="raw_source_encoding" type="string" required>
+  Encoding format for `raw_source_base64`. Always `"base64"` on success, `null` on failure.
+</ResponseField>
+
+## Size Limits and Behavior
+
+### Maximum Size
+
+- **Default**: 200,000 bytes (~200 KB)
+- **Range**: 1,024-1,000,000 bytes (1 KB to ~1 MB)
+- **Enforcement**: Size is checked **after** fetching the complete message
+
+### When Message Exceeds max_bytes
+
+If the actual message size is larger than `max_bytes`, the operation fails with:
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "message exceeds max_bytes; increase max_bytes"
+  }
+}
+```
+
+To retrieve the message, retry with a larger `max_bytes` value (up to 1,000,000).
+
+## Base64 Encoding
+
+The `raw_source_base64` field contains the message bytes encoded using standard base64 encoding:
+
+- **Alphabet**: `A-Z`, `a-z`, `0-9`, `+`, `/`
+- **Padding**: `=` characters as needed
+- **Line breaks**: No line breaks in the encoded string
+
+### Decoding Example (JavaScript)
+
+```javascript
+const decoded = Buffer.from(data.raw_source_base64, 'base64');
+const messageText = decoded.toString('utf-8');
+```
+
+### Decoding Example (Python)
+
+```python
+import base64
+
+decoded = base64.b64decode(data['raw_source_base64'])
+message_text = decoded.decode('utf-8')
+```
+
+## UIDVALIDITY Validation
+
+The server validates that the mailbox UIDVALIDITY in the `message_id` matches the current mailbox state. If the UIDVALIDITY has changed, the operation fails with a `conflict` error:
+
+```json
+{
+  "error": {
+    "code": "conflict",
+    "message": "message uidvalidity no longer matches mailbox"
+  }
+}
+```
+
+## Example: Fetch Small Message
+
+**Request:**
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:123456:789",
+  "max_bytes": 50000
+}
+```
+
+**Response:**
+
+```json
+{
+  "summary": "Raw message retrieved",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "account_id": "default",
+    "message_id": "imap:default:INBOX:123456:789",
+    "message_uri": "imap://default/mailbox/INBOX/message/123456/789",
+    "message_raw_uri": "imap://default/mailbox/INBOX/message/123456/789/raw",
+    "size_bytes": 2847,
+    "raw_source_base64": "UmV0dXJuLVBhdGg6IDxhbGljZUBleGFtcGxlLmNvbT4KRGVsaXZlcmVkLVRvOiBib2JAZXhhbXBsZS5jb20KUmVjZWl2ZWQ6IGZyb20gbWFpbC5leGFtcGxlLmNvbSAoWzE5Mi4wLjIuMV0pCglmb3IgPGJvYkBleGFtcGxlLmNvbT47IE1vbiwgMyBNYXIgMjAyNiAxMDozMDowMCArMDAwMApGcm9tOiBBbGljZSA8YWxpY2VAZXhhbXBsZS5jb20+ClRvOiBCb2IgPGJvYkBleGFtcGxlLmNvbT4KU3ViamVjdDogUHJvamVjdCBVcGRhdGU6IFExIFBsYW5uaW5nCkRhdGU6IE1vbiwgMyBNYXIgMjAyNiAxMDozMDowMCArMDAwMApNZXNzYWdlLUlEOiA8YWJjMTIzQGV4YW1wbGUuY29tPgpDb250ZW50LVR5cGU6IHRleHQvcGxhaW47IGNoYXJzZXQ9VVRGLTgKQ29udGVudC1UcmFuc2Zlci1FbmNvZGluZzogN2JpdAoKSGkgQm9iLAoKSGVyZSdzIHRoZSBRMSBwbGFubmluZyB1cGRhdGUuLi4KCkJlc3QsCkFsaWNl",
+    "raw_source_encoding": "base64"
+  },
+  "meta": {
+    "now_utc": "2026-03-03T10:42:15.234Z",
+    "duration_ms": 89
+  }
+}
+```
+
+## Example: Fetch Large Message
+
+**Request:**
+
+```json
+{
+  "account_id": "work",
+  "message_id": "imap:work:Archive:987654:555",
+  "max_bytes": 500000
+}
+```
+
+**Response:**
+
+```json
+{
+  "summary": "Raw message retrieved",
+  "data": {
+    "status": "ok",
+    "issues": [],
+    "account_id": "work",
+    "message_id": "imap:work:Archive:987654:555",
+    "message_uri": "imap://work/mailbox/Archive/message/987654/555",
+    "message_raw_uri": "imap://work/mailbox/Archive/message/987654/555/raw",
+    "size_bytes": 387562,
+    "raw_source_base64": "UmV0dXJuLVBhdGg6IDxzZW5kZXJAZXhhbXBsZS5jb20+CkRlbGl2ZXJlZC1Ubz...",
+    "raw_source_encoding": "base64"
+  },
+  "meta": {
+    "now_utc": "2026-03-03T10:43:20.567Z",
+    "duration_ms": 245
+  }
+}
+```
+
+## Example: Message Too Large
+
+**Request:**
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:123456:800",
+  "max_bytes": 100000
+}
+```
+
+**Error Response:**
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "message exceeds max_bytes; increase max_bytes",
+    "details": {}
+  },
+  "meta": {
+    "now_utc": "2026-03-03T10:45:10.890Z",
+    "duration_ms": 156
+  }
+}
+```
+
+**Solution:** Retry with a larger `max_bytes`:
+
+```json
+{
+  "account_id": "default",
+  "message_id": "imap:default:INBOX:123456:800",
+  "max_bytes": 500000
+}
+```
+
+## Example: Connection Failure
+
+**Response:**
+
+```json
+{
+  "summary": "Raw message retrieved",
+  "data": {
+    "status": "failed",
+    "issues": [
+      {
+        "code": "timeout",
+        "stage": "connect_authenticated",
+        "message": "connection timeout after 30000ms",
+        "retryable": true,
+        "uid": null,
+        "message_id": "imap:default:INBOX:123456:789"
+      }
+    ],
+    "account_id": "default",
+    "message_id": "imap:default:INBOX:123456:789",
+    "message_uri": "imap://default/mailbox/INBOX/message/123456/789",
+    "message_raw_uri": "imap://default/mailbox/INBOX/message/123456/789/raw",
+    "size_bytes": 0,
+    "raw_source_base64": null,
+    "raw_source_encoding": null
+  },
+  "meta": {
+    "now_utc": "2026-03-03T10:46:30.123Z",
+    "duration_ms": 30045
+  }
+}
+```
+
+## Use Cases
+
+### Diagnostics and Debugging
+
+Retrieve the raw message source to:
+- Inspect complete MIME structure
+- Diagnose encoding issues
+- Analyze malformed headers
+- Debug attachment problems
+
+### Message Export and Archival
+
+Save messages in standard RFC822 format for:
+- Long-term archival
+- Migration to other systems
+- Backup and disaster recovery
+- Compliance and legal holds
+
+### Advanced Processing
+
+Provide raw message data to:
+- Custom MIME parsers
+- Machine learning pipelines
+- Security scanning tools
+- Email forensics applications
+
+## Validation Errors
+
+### Invalid message_id Format
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "message_id must start with 'imap:' prefix"
+  }
+}
+```
+
+### Account Mismatch
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "message_id account does not match account_id"
+  }
+}
+```
+
+### Size Limit Out of Range
+
+```json
+{
+  "error": {
+    "code": "invalid_input",
+    "message": "max_bytes must be in range 1024..1000000"
+  }
+}
+```
+
+### UIDVALIDITY Conflict
+
+```json
+{
+  "error": {
+    "code": "conflict",
+    "message": "message uidvalidity no longer matches mailbox"
+  }
+}
+```
+
+## Related Tools
+
+- [imap_get_message](/api/imap-get-message) - Get parsed message with structured data
+- [imap_search_messages](/api/imap-search-messages) - Search for messages to get message IDs
+- [imap_copy_message](/api/imap-copy-message) - Copy message to another mailbox
